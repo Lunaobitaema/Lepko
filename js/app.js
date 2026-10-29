@@ -1,0 +1,629 @@
+// Лепко — прототип витрины и конструктора наклеек. Без сборки, без сервера.
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const app = $("#app");
+const uid = () => Math.random().toString(36).slice(2, 9);
+
+// ---------- состояние заказа ----------
+const EMPTY = { cat: null, sol: null, style: "minimal", material: "standard", sheet: "A6", stickers: [] };
+let order = load();
+let selected = null;
+
+function load() {
+  try { return { ...EMPTY, ...JSON.parse(localStorage.getItem("lepko-order") || "{}") }; }
+  catch { return { ...EMPTY }; }
+}
+function save() {
+  try { localStorage.setItem("lepko-order", JSON.stringify(order)); } catch {}
+  updateCartBadge();
+}
+
+function styled(base, styleKey, i = 0) {
+  const st = STYLES[styleKey];
+  const bg = st.cycle ? st.cycle[i % st.cycle.length] : st.bg;
+  return { ...base, bg, fg: st.fg, font: st.font, weight: st.weight };
+}
+function applyStyle(styleKey) {
+  order.style = styleKey;
+  order.stickers = order.stickers.map((s, i) => styled(s, styleKey, i));
+}
+function startFromSolution(cat, sol) {
+  order = {
+    cat: cat.id, sol: sol.id, style: sol.style, material: sol.material, sheet: sol.sheet,
+    stickers: sol.stickers.map((s, i) => styled({ ...s, id: uid() }, sol.style, i)),
+  };
+  save();
+}
+function startCustom() {
+  order = { ...EMPTY, stickers: [styled({ id: uid(), shape: "round", w: 50, h: 24, text: "Моя наклейка", sub: "", icon: "star" }, "minimal")] };
+  save();
+}
+
+const findCat = (id) => CATEGORIES.find((c) => c.id === id);
+const findSol = (cat, id) => cat?.solutions.find((s) => s.id === id);
+
+// ---------- общие куски ----------
+function header() {
+  return `<header class="top">
+    <a href="#/" class="logo" aria-label="Лепко, на главную"><span>лепко</span></a>
+    <nav class="top-nav" aria-label="Основное меню">
+      <a href="#/?to=catalog">Каталог</a>
+      <a href="#/?to=how">Как это работает</a>
+      <a href="#/custom">Своя наклейка</a>
+      <a href="#/editor" class="cart-link" ${order.stickers.length ? "" : "hidden"}>Мой лист <b class="cart-count">${order.stickers.length}</b></a>
+    </nav>
+  </header>`;
+}
+function updateCartBadge() {
+  const a = $(".cart-link");
+  if (!a) return;
+  a.hidden = !order.stickers.length;
+  const b = $(".cart-count", a);
+  if (b) b.textContent = order.stickers.length;
+}
+
+function footer() {
+  const used = new Set();
+  const credits = Object.entries(CREDITS).filter(([, [n]]) => !used.has(n) && used.add(n))
+    .map(([, [name, user]]) => `<a href="https://unsplash.com/@${user}?utm_source=lepko&utm_medium=referral" target="_blank" rel="noopener">${esc(name)}</a>`).join(", ");
+  return `<footer class="foot">
+    <div class="foot-row">
+      <span class="logo logo-sm"><span>лепко</span></span>
+      <p>Наклейки для порядка дома. Варна, доставка по всей Болгарии.</p>
+    </div>
+    <p class="foot-note">Прототип. Фото временные, с <a href="https://unsplash.com/?utm_source=lepko&utm_medium=referral" target="_blank" rel="noopener">Unsplash</a>: ${credits}.</p>
+  </footer>`;
+}
+
+function photoImg(id, alt, w = 900, cls = "") {
+  return `<img class="${cls}" src="${PHOTO(id, w)}" srcset="${PHOTO(id, Math.round(w / 2))} ${Math.round(w / 2)}w, ${PHOTO(id, w)} ${w}w" sizes="(max-width: 700px) 92vw, ${Math.round(w / 2)}px" alt="${esc(alt)}" loading="lazy">`;
+}
+
+function label(text, extra = "") {
+  return `<span class="label ${extra}">${esc(text)}</span>`;
+}
+
+// ---------- главная ----------
+function viewHome(query) {
+  const demoSol = CATEGORIES[0].solutions[0];
+  const demo = demoSol.stickers.map((s, i) => styled({ ...s, id: "d" + i }, "minimal", i));
+  const demoSheet = pack(demo, "A6").sheets[0];
+
+  const gallery = GALLERY.map(([id, cat, name], i) => `
+    <a class="g-item ${i % 5 === 0 ? "tall" : ""}" href="#/c/${cat}">
+      ${photoImg(id, name, 700)}
+      ${label(name, i % 3 === 1 ? "label-tilt-r" : "label-tilt-l")}
+    </a>`).join("");
+
+  const cats = CATEGORIES.map((c) => `
+    <a class="cat" href="#/c/${c.id}">
+      <div class="cat-photo">${photoImg(c.photo, c.name, 600)}</div>
+      <div class="cat-body">
+        <h3>${esc(c.name)}</h3>
+        <p>${esc(c.lead)}</p>
+        <span class="cat-count">${c.solutions.length} ${plural(c.solutions.length, "набор", "набора", "наборов")}</span>
+      </div>
+    </a>`).join("");
+
+  app.innerHTML = `${header()}
+  <main>
+    <section class="hero">
+      <div class="hero-text">
+        <h1><span class="h1-sticker">Порядок начинается с&nbsp;подписи</span></h1>
+        <p class="hero-sub">Наклейки для банок, тетрадей, ящиков и инструментов. Выберите готовый набор, впишите свои слова. Мы напечатаем, заламинируем и вырежем каждую наклейку по контуру.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="#/?to=catalog">Выбрать наклейки</a>
+          <a class="btn btn-ghost" href="#/custom">Сделать свою с нуля</a>
+        </div>
+        <p class="hero-min">Заказ от одного листа A6, от 3 €</p>
+      </div>
+      <div class="hero-visual">
+        <div class="hero-photo">${photoImg("1786398018341-9987018dcdcc", "Подписанные банки в кладовой", 1000)}</div>
+        <figure class="hero-sheet" aria-label="Так выглядит лист A6 с наклейками">
+          ${sheetSVG(demoSheet, "A6")}
+          <figcaption>Лист A6, 8 наклеек</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="small-order">
+      <div class="so-num">5</div>
+      <div>
+        <h2>Пять наклеек — тоже заказ</h2>
+        <p>Типографии такие заказы не берут: мало и невыгодно. А нам подходит. Минимальный заказ — один лист A6 за 3 €, на него поместятся все баночки со специями.</p>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="g-title">
+      <h2 id="g-title" class="section-title">Как это выглядит дома</h2>
+      <div class="gallery">${gallery}</div>
+    </section>
+
+    <section class="section" id="catalog" aria-labelledby="c-title">
+      <h2 id="c-title" class="section-title">Что подписываем?</h2>
+      <div class="cats">${cats}
+        <a class="cat cat-custom" href="#/custom">
+          <div class="cat-body">
+            <h3>Своя наклейка</h3>
+            <p>Форма, размер, текст и картинка — как хотите. Для тех, кто знает, что нужно.</p>
+            <span class="btn btn-ghost">Открыть конструктор</span>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <section class="section how" id="how" aria-labelledby="h-title">
+      <h2 id="h-title" class="section-title">Как это работает</h2>
+      <ol class="steps">
+        <li><b>Выберите набор</b><span>Кухня, школа, мастерская или своя наклейка с нуля.</span></li>
+        <li><b>Впишите свои слова</b><span>Названия, имена, даты. Лист меняется у вас на глазах.</span></li>
+        <li><b>Получите по почте</b><span>Печатаем за 1–2 дня и отправляем Econt или Speedy. Лист плоский, приходит в конверте.</span></li>
+      </ol>
+    </section>
+
+    <section class="section faq" aria-labelledby="f-title">
+      <h2 id="f-title" class="section-title">Частые вопросы</h2>
+      <details><summary>Сколько наклеек поместится на лист?</summary><p>Зависит от размера. Например, на A6 помещается 8 наклеек 40×22 мм или 12 круглых по 24 мм. Конструктор сразу показывает раскладку и считает листы.</p></details>
+      <details><summary>Наклейки выдержат мытьё?</summary><p>Выберите вариант «Кухня и ванная»: плёнка покрыта ламинатом и не боится воды. Для морозилки и улицы есть свои материалы.</p></details>
+      <details><summary>Можно заказать совсем немного?</summary><p>Да. Минимальный заказ — один лист A6. Оставшееся место можно заполнить копиями, это бесплатно.</p></details>
+      <details><summary>Как оплатить и получить?</summary><p>Картой на сайте или наложенным платежом. Доставка Econt или Speedy до офиса или курьером до двери.</p></details>
+    </section>
+  </main>
+  ${footer()}`;
+
+  if (query.get("to")) requestAnimationFrame(() => document.getElementById(query.get("to"))?.scrollIntoView({ behavior: "smooth" }));
+}
+
+// ---------- категория ----------
+function viewCategory(catId) {
+  const cat = findCat(catId);
+  if (!cat) return notFound();
+  const cards = cat.solutions.map((s) => {
+    const prev = s.stickers.slice(0, 4).map((x, i) => styled({ ...x, id: "p" + i }, s.style, i));
+    return `
+    <article class="sol">
+      <div class="sol-photo">${photoImg(s.photo, s.name, 800)}${label(s.name, "label-tilt-l")}</div>
+      <div class="sol-body">
+        <p>${esc(s.text)}</p>
+        <div class="sol-mini">${prev.map((x) => miniSticker(x)).join("")}</div>
+        <div class="sol-foot">
+          <span class="muted">${s.stickers.length} ${plural(s.stickers.length, "наклейка", "наклейки", "наклеек")} в наборе</span>
+          <a class="btn btn-primary" href="#/s/${cat.id}/${s.id}/1">Выбрать</a>
+        </div>
+      </div>
+    </article>`;
+  }).join("");
+
+  app.innerHTML = `${header()}
+  <main class="page">
+    <nav class="crumbs" aria-label="Путь"><a href="#/?to=catalog">Каталог</a><span>/</span><span>${esc(cat.name)}</span></nav>
+    <h1 class="page-title">${esc(cat.name)}</h1>
+    <p class="page-lead">${esc(cat.lead)}</p>
+    <div class="sols">${cards}</div>
+  </main>
+  ${footer()}`;
+}
+
+function miniSticker(s) {
+  const pad = 1;
+  return `<svg class="mini" viewBox="${-pad} ${-pad} ${s.w + pad * 2} ${s.h + pad * 2}" style="aspect-ratio:${s.w + 2}/${s.h + 2}" aria-hidden="true">${stickerSVG(s, 0, 0)}</svg>`;
+}
+
+// ---------- шаги выбора ----------
+const STEP_NAMES = ["Стиль", "Где будет наклейка", "Размер листа", "Свои слова"];
+
+function stepper(active, base) {
+  return `<ol class="stepper" aria-label="Шаги">${STEP_NAMES.map((n, i) => {
+    const k = i + 1;
+    const state = k < active ? "done" : k === active ? "current" : "";
+    const inner = `<span class="st-n">${k}</span><span class="st-t">${n}</span>`;
+    const href = k < active ? (k === 4 ? "#/editor" : `${base}/${k}`) : null;
+    return `<li class="${state}" ${k === active ? 'aria-current="step"' : ""}>${href ? `<a href="${href}">${inner}</a>` : inner}</li>`;
+  }).join("")}</ol>`;
+}
+
+function viewStep(catId, solId, step) {
+  const cat = findCat(catId), sol = findSol(cat, solId);
+  if (!sol) return notFound();
+  if (order.sol !== sol.id || order.cat !== cat.id || !order.stickers.length) startFromSolution(cat, sol);
+  const base = `#/s/${cat.id}/${sol.id}`;
+  step = Math.min(3, Math.max(1, step | 0));
+
+  let title = "", body = "";
+  if (step === 1) {
+    title = "Какой стиль вам нравится?";
+    body = `<div class="choices choices-style">${Object.entries(STYLES).map(([k, st]) => {
+      const sample = sol.stickers.slice(0, 2).map((x, i) => styled({ ...x, id: k + i }, k, i));
+      return `<button class="choice ${order.style === k ? "is-on" : ""}" data-act="style" data-v="${k}">
+        <span class="choice-art">${sample.map(miniSticker).join("")}</span>
+        <span class="choice-name">${st.name}</span>
+      </button>`;
+    }).join("")}</div>`;
+  } else if (step === 2) {
+    title = "Где будут наклейки?";
+    body = `<div class="choices">${Object.entries(MATERIALS).map(([k, m]) => `
+      <button class="choice choice-row ${order.material === k ? "is-on" : ""}" data-act="material" data-v="${k}">
+        <span class="choice-ico">${iconSVG(m.icon, 26)}</span>
+        <span><span class="choice-name">${m.name}</span><span class="choice-text">${m.text}</span></span>
+        <span class="choice-price">${m.extra ? "+" + Math.round(m.extra * 100) + "%" : "базовая цена"}</span>
+      </button>`).join("")}</div>`;
+  } else {
+    title = "Какой размер листа?";
+    body = `<div class="choices choices-sheet">${Object.entries(SHEETS).map(([k, sh]) => {
+      const p = pack(order.stickers, k);
+      const n = p.sheets.length;
+      const fits = p.tooBig.length ? "наклейки крупнее листа" : n === 1 ? "весь набор на одном листе" : `набор займёт ${n} ${plural(n, "лист", "листа", "листов")}`;
+      const price = priceOf({ ...order, sheet: k });
+      return `<button class="choice choice-sheet ${order.sheet === k ? "is-on" : ""}" data-act="sheet" data-v="${k}">
+        <span class="sheet-thumb" style="--w:${sh.w};--h:${sh.h}">${sheetSVG(p.sheets[0], k)}</span>
+        <span class="choice-name">${sh.label} <small>${sh.w}×${sh.h} мм, ${sh.hint}</small></span>
+        <span class="choice-text">${fits}</span>
+        <span class="choice-price">${money(price.total)}</span>
+      </button>`;
+    }).join("")}</div>`;
+  }
+
+  app.innerHTML = `${header()}
+  <main class="page wizard">
+    <nav class="crumbs" aria-label="Путь"><a href="#/?to=catalog">Каталог</a><span>/</span><a href="#/c/${cat.id}">${esc(cat.name)}</a><span>/</span><span>${esc(sol.name)}</span></nav>
+    ${stepper(step, base)}
+    <div class="wiz-head">
+      <div class="wiz-photo">${photoImg(sol.photo, sol.name, 500)}</div>
+      <div>
+        <h1 class="page-title">${title}</h1>
+        <p class="page-lead">Набор «${esc(sol.name)}». Всё можно поменять позже в конструкторе.</p>
+      </div>
+    </div>
+    ${body}
+    <div class="wiz-nav">
+      <a class="btn btn-ghost" href="${step === 1 ? `#/c/${cat.id}` : `${base}/${step - 1}`}">Назад</a>
+      <a class="btn btn-primary" href="${step === 3 ? "#/editor" : `${base}/${step + 1}`}">${step === 3 ? "Перейти к своим словам" : "Дальше"}</a>
+    </div>
+  </main>
+  ${footer()}`;
+
+  app.onclick = (e) => {
+    const b = e.target.closest("[data-act]");
+    if (!b) return;
+    const v = b.dataset.v;
+    if (b.dataset.act === "style") applyStyle(v);
+    if (b.dataset.act === "material") order.material = v;
+    if (b.dataset.act === "sheet") order.sheet = v;
+    save();
+    location.hash = step === 3 ? "#/editor" : `${base}/${step + 1}`;
+  };
+}
+
+// ---------- конструктор ----------
+function viewEditor() {
+  if (!order.stickers.length) startCustom();
+  if (!order.stickers.find((s) => s.id === selected)) selected = order.stickers[0]?.id || null;
+  const cat = findCat(order.cat), sol = findSol(cat, order.sol);
+  const crumbs = sol
+    ? `<a href="#/?to=catalog">Каталог</a><span>/</span><a href="#/c/${cat.id}">${esc(cat.name)}</a><span>/</span><a href="#/s/${cat.id}/${sol.id}/1">${esc(sol.name)}</a><span>/</span><span>Конструктор</span>`
+    : `<a href="#/?to=catalog">Каталог</a><span>/</span><span>Своя наклейка</span>`;
+
+  app.innerHTML = `${header()}
+  <main class="page editor">
+    <nav class="crumbs" aria-label="Путь">${crumbs}</nav>
+    ${sol ? stepper(4, `#/s/${cat.id}/${sol.id}`) : ""}
+    <div class="ed">
+      <section class="ed-preview" aria-label="Превью листа">
+        <div class="ed-sheet-bar">
+          <div class="seg" role="group" aria-label="Размер листа">${Object.keys(SHEETS).map((k) => `<button data-sheet="${k}" class="${order.sheet === k ? "is-on" : ""}">${k}</button>`).join("")}</div>
+          <label class="mat-select">Материал
+            <select id="material">${Object.entries(MATERIALS).map(([k, m]) => `<option value="${k}" ${order.material === k ? "selected" : ""}>${m.name}</option>`).join("")}</select>
+          </label>
+        </div>
+        <div id="sheets" class="sheets"></div>
+        <p class="ed-hint">Нажмите на наклейку, чтобы изменить её. Пунктир — линия реза.</p>
+      </section>
+
+      <section class="ed-panel" aria-label="Настройки">
+        <div class="panel-block">
+          <div class="pb-head"><h2>Наклейки на листе</h2><span id="count" class="muted"></span></div>
+          <ul id="list" class="s-list"></ul>
+          <div class="add-row">
+            <button class="btn btn-ghost btn-sm" data-act="add">Добавить наклейку</button>
+            <button class="btn btn-ghost btn-sm" data-act="fill">Заполнить лист копиями</button>
+          </div>
+          <details class="bulk">
+            <summary>Добавить списком</summary>
+            <p class="muted">Одна строка — одна наклейка. Картинка подберётся сама, если узнаем слово.</p>
+            <textarea id="bulk" rows="5" placeholder="Булгур&#10;Киноа&#10;Нут"></textarea>
+            <button class="btn btn-primary btn-sm" data-act="bulk">Добавить</button>
+          </details>
+        </div>
+        <div class="panel-block" id="props"></div>
+      </section>
+    </div>
+  </main>
+  <div class="paybar">
+    <div id="summary"></div>
+    <a class="btn btn-primary" href="#/order">Оформить заказ</a>
+  </div>`;
+
+  renderSheets(); renderList(); renderProps(); renderSummary();
+
+  app.onclick = onEditorClick;
+  app.oninput = onEditorInput;
+  app.onchange = onEditorChange;
+}
+
+function renderSheets() {
+  const p = pack(order.stickers, order.sheet);
+  const sh = SHEETS[order.sheet];
+  const warn = p.tooBig.length ? `<p class="warn">${p.tooBig.length} ${plural(p.tooBig.length, "наклейка больше", "наклейки больше", "наклеек больше")} листа ${sh.label}. Уменьшите размер или выберите лист побольше.</p>` : "";
+  $("#sheets").innerHTML = warn + p.sheets.map((s, i) => `
+    <figure class="sheet" style="--w:${sh.w};--h:${sh.h}">
+      ${sheetSVG(s, order.sheet, { selected })}
+      <figcaption>Лист ${i + 1} из ${p.sheets.length}, ${sh.label}</figcaption>
+    </figure>`).join("");
+}
+
+function renderList() {
+  $("#count").textContent = `${order.stickers.length} шт.`;
+  $("#list").innerHTML = order.stickers.map((s) => `
+    <li class="s-row ${s.id === selected ? "is-on" : ""}" data-id="${s.id}">
+      <button class="s-pick" data-act="select" data-id="${s.id}" aria-label="Выбрать наклейку">${miniSticker(s)}</button>
+      <input class="s-text" data-field="text" data-id="${s.id}" value="${esc(s.text)}" aria-label="Текст наклейки">
+      <button class="icon-btn" data-act="dup" data-id="${s.id}" title="Копия" aria-label="Сделать копию">${iconSVG("box", 18)}</button>
+      <button class="icon-btn" data-act="del" data-id="${s.id}" title="Удалить" aria-label="Удалить наклейку"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </li>`).join("");
+}
+
+const SHAPES = [["rect", "Прямоугольник"], ["round", "Скруглённая"], ["circle", "Круг"], ["oval", "Овал"], ["tag", "Бирка"], ["banner", "Флажок"]];
+const SIZE_PRESETS = [[24, 24, "24×24"], [36, 12, "36×12"], [40, 22, "40×22"], [50, 30, "50×30"], [64, 24, "64×24"], [80, 40, "80×40"]];
+
+function renderProps() {
+  const s = order.stickers.find((x) => x.id === selected);
+  const box = $("#props");
+  if (!s) { box.innerHTML = `<p class="muted">Выберите наклейку на листе или в списке.</p>`; return; }
+  const shapeBtn = ([k, n]) => {
+    const demo = { ...s, shape: k, w: k === "circle" ? 18 : 26, h: 18, text: "", sub: "", icon: null, id: "sh" };
+    return `<button class="shape ${s.shape === k ? "is-on" : ""}" data-act="shape" data-v="${k}" aria-label="${n}" title="${n}"><svg viewBox="-1 -1 ${demo.w + 2} 20" width="40" height="28" aria-hidden="true"><g fill="${s.bg}" stroke="#1C2340" stroke-width=".8">${shapePath(demo, 0, 0)}</g></svg></button>`;
+  };
+  box.innerHTML = `
+    <div class="pb-head"><h2>Эта наклейка</h2></div>
+    <label class="field">Текст<input data-field="text" value="${esc(s.text)}"></label>
+    <label class="field">Вторая строка <span class="muted">необязательно</span><input data-field="sub" value="${esc(s.sub)}" placeholder="Дата, имя, класс"></label>
+
+    <fieldset class="field"><legend>Форма</legend><div class="shapes">${SHAPES.map(shapeBtn).join("")}</div></fieldset>
+
+    <fieldset class="field"><legend>Размер, мм</legend>
+      <div class="chips">${SIZE_PRESETS.map(([w, h, l]) => `<button class="chip ${s.w === w && s.h === h ? "is-on" : ""}" data-act="size" data-w="${w}" data-h="${h}">${l}</button>`).join("")}</div>
+      <div class="wh">
+        <label>Ширина<input type="number" min="8" max="190" data-field="w" value="${s.w}"></label>
+        <label>Высота<input type="number" min="8" max="280" data-field="h" value="${s.h}" ${s.shape === "circle" ? "disabled" : ""}></label>
+      </div>
+    </fieldset>
+
+    <fieldset class="field"><legend>Картинка</legend>
+      <div class="icons">
+        <button class="icon-pick ${!s.icon ? "is-on" : ""}" data-act="icon" data-v="" title="Без картинки" aria-label="Без картинки">нет</button>
+        ${Object.keys(ICONS).map((k) => `<button class="icon-pick ${s.icon === k ? "is-on" : ""}" data-act="icon" data-v="${k}" title="${ICON_NAMES[k]}" aria-label="${ICON_NAMES[k]}">${iconSVG(k, 20)}</button>`).join("")}
+      </div>
+    </fieldset>
+
+    <fieldset class="field"><legend>Фон</legend><div class="swatches">${SWATCHES.map((c) => `<button class="sw ${s.bg === c ? "is-on" : ""}" style="--c:${c}" data-act="bg" data-v="${c}" aria-label="Фон ${c}"></button>`).join("")}</div></fieldset>
+    <fieldset class="field"><legend>Цвет текста</legend><div class="swatches">${["#1C2340", "#FFFFFF", "#F3F1E8", "#3B2A17", "#2F5BD3", "#C8433A"].map((c) => `<button class="sw ${s.fg === c ? "is-on" : ""}" style="--c:${c}" data-act="fg" data-v="${c}" aria-label="Текст ${c}"></button>`).join("")}</div></fieldset>
+
+    <label class="field">Шрифт
+      <select data-field="font">${FONTS.map((f) => `<option ${s.font === f ? "selected" : ""} style="font-family:'${f}'">${f}</option>`).join("")}</select>
+    </label>
+    <button class="btn btn-ghost btn-sm" data-act="apply-all">Применить форму, размер и цвета ко всем</button>`;
+}
+
+function renderSummary() {
+  const p = priceOf(order);
+  const m = MATERIALS[order.material];
+  $("#summary").innerHTML = `<b>${money(p.total)}</b><span>${p.sheets} ${plural(p.sheets, "лист", "листа", "листов")} ${order.sheet}, ${order.stickers.length} ${plural(order.stickers.length, "наклейка", "наклейки", "наклеек")}, ${m.name.toLowerCase()}</span>`;
+}
+
+function refresh({ list = false, props = false } = {}) {
+  save();
+  renderSheets(); renderSummary();
+  if (list) renderList();
+  if (props) renderProps();
+}
+
+function current() { return order.stickers.find((x) => x.id === selected); }
+
+function onEditorClick(e) {
+  const stk = e.target.closest(".sheets .stk");
+  if (stk) { selected = stk.dataset.id; refresh({ list: true, props: true }); scrollPropsOnMobile(); return; }
+
+  const sb = e.target.closest("[data-sheet]");
+  if (sb) { order.sheet = sb.dataset.sheet; app.querySelectorAll("[data-sheet]").forEach((b) => b.classList.toggle("is-on", b === sb)); refresh(); return; }
+
+  const b = e.target.closest("[data-act]");
+  if (!b) return;
+  const s = current();
+  const id = b.dataset.id;
+  switch (b.dataset.act) {
+    case "select": selected = id; refresh({ list: true, props: true }); scrollPropsOnMobile(); break;
+    case "dup": {
+      const i = order.stickers.findIndex((x) => x.id === id);
+      const copy = { ...order.stickers[i], id: uid() };
+      order.stickers.splice(i + 1, 0, copy); selected = copy.id;
+      refresh({ list: true, props: true }); break;
+    }
+    case "del": {
+      order.stickers = order.stickers.filter((x) => x.id !== id);
+      if (!order.stickers.length) { startCustom(); }
+      if (selected === id) selected = order.stickers[0].id;
+      refresh({ list: true, props: true }); break;
+    }
+    case "add": {
+      const base = s || order.stickers[order.stickers.length - 1];
+      const n = { ...base, id: uid(), text: "Новая", sub: "" };
+      order.stickers.push(n); selected = n.id;
+      refresh({ list: true, props: true });
+      requestAnimationFrame(() => $(`#list [data-id="${n.id}"].s-text`)?.select());
+      break;
+    }
+    case "fill": {
+      const base = s || order.stickers[0];
+      const k = spaceLeftFor(base, order.stickers, order.sheet);
+      for (let i = 0; i < k; i++) order.stickers.push({ ...base, id: uid() });
+      toast(k ? `Добавлено копий: ${k}` : "На последнем листе нет места для этой наклейки");
+      refresh({ list: true }); break;
+    }
+    case "bulk": {
+      const lines = $("#bulk").value.split("\n").map((x) => x.trim()).filter(Boolean);
+      if (!lines.length) { toast("Впишите хотя бы одну строку"); break; }
+      const base = s || order.stickers[0];
+      lines.forEach((text) => {
+        const hit = ICON_WORDS.find(([re]) => re.test(text));
+        order.stickers.push({ ...base, id: uid(), text, sub: "", icon: hit ? hit[1] : base.icon });
+      });
+      $("#bulk").value = "";
+      toast(`Добавлено: ${lines.length}`);
+      refresh({ list: true }); break;
+    }
+    case "shape":
+      s.shape = b.dataset.v;
+      if (s.shape === "circle") s.h = s.w = Math.min(s.w, s.h) < 16 ? Math.max(s.w, s.h) : Math.min(s.w, s.h);
+      refresh({ list: true, props: true }); break;
+    case "size":
+      s.w = +b.dataset.w; s.h = +b.dataset.h;
+      if (s.shape === "circle") s.h = s.w;
+      refresh({ list: true, props: true }); break;
+    case "icon": s.icon = b.dataset.v || null; refresh({ list: true, props: true }); break;
+    case "bg": s.bg = b.dataset.v; refresh({ list: true, props: true }); break;
+    case "fg": s.fg = b.dataset.v; refresh({ list: true, props: true }); break;
+    case "apply-all":
+      order.stickers = order.stickers.map((x) => ({ ...x, shape: s.shape, w: s.w, h: s.h, bg: s.bg, fg: s.fg, font: s.font, weight: s.weight }));
+      toast("Готово: все наклейки одинаковые по форме и цвету");
+      refresh({ list: true }); break;
+  }
+}
+
+function onEditorInput(e) {
+  const el = e.target;
+  const field = el.dataset.field;
+  if (!field) return;
+  const s = el.dataset.id ? order.stickers.find((x) => x.id === el.dataset.id) : current();
+  if (!s) return;
+  if (field === "w" || field === "h") {
+    const v = Math.round(+el.value);
+    if (!v || v < 8) return;
+    s[field] = Math.min(v, 280);
+    if (s.shape === "circle") s.h = s.w;
+  } else if (field === "font") {
+    s.font = el.value;
+    s.weight = el.value === "Caveat" || el.value === "PT Serif" || el.value === "Comfortaa" ? 700 : 600;
+  } else {
+    s[field] = el.value;
+  }
+  save(); renderSheets(); renderSummary();
+  // синхронизация второго поля с тем же текстом
+  if (field === "text") {
+    app.querySelectorAll(`[data-field="text"]`).forEach((inp) => {
+      const same = inp.dataset.id ? inp.dataset.id === s.id : s.id === selected;
+      if (same && inp !== el) inp.value = s.text;
+    });
+    const pick = $(`.s-row[data-id="${s.id}"] .s-pick`);
+    if (pick) pick.innerHTML = miniSticker(s);
+  }
+}
+
+function onEditorChange(e) {
+  if (e.target.id === "material") { order.material = e.target.value; refresh(); }
+  if (e.target.dataset.field === "w" || e.target.dataset.field === "h" || e.target.dataset.field === "font") refresh({ list: true, props: true });
+}
+
+function scrollPropsOnMobile() {
+  if (window.matchMedia("(max-width: 900px)").matches) $("#props")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---------- оформление ----------
+function viewOrder() {
+  if (!order.stickers.length) { location.hash = "#/"; return; }
+  const p = priceOf(order);
+  const { sheets } = pack(order.stickers, order.sheet);
+  app.innerHTML = `${header()}
+  <main class="page checkout">
+    <nav class="crumbs" aria-label="Путь"><a href="#/editor">Конструктор</a><span>/</span><span>Оформление</span></nav>
+    <h1 class="page-title">Оформление заказа</h1>
+    <div class="co">
+      <section class="co-sum" aria-label="Ваш заказ">
+        <div class="co-sheets">${sheets.map((s) => `<figure class="sheet sheet-sm" style="--w:${SHEETS[order.sheet].w};--h:${SHEETS[order.sheet].h}">${sheetSVG(s, order.sheet)}</figure>`).join("")}</div>
+        <dl class="co-dl">
+          <div><dt>Наклейки</dt><dd>${order.stickers.length} шт.</dd></div>
+          <div><dt>Листы</dt><dd>${p.sheets} × ${order.sheet}, по ${money(p.each)}</dd></div>
+          <div><dt>Материал</dt><dd>${MATERIALS[order.material].name}</dd></div>
+          <div class="co-total"><dt>Итого</dt><dd>${money(p.total)}</dd></div>
+        </dl>
+        <a class="btn btn-ghost btn-sm" href="#/editor">Вернуться и поправить</a>
+      </section>
+      <form class="co-form" id="coForm" novalidate>
+        <label class="field">Имя и фамилия<input name="name" autocomplete="name" required></label>
+        <label class="field">Телефон<input name="phone" type="tel" autocomplete="tel" placeholder="+359 …" required></label>
+        <fieldset class="field"><legend>Доставка</legend>
+          <label class="radio"><input type="radio" name="ship" value="econt" checked> Econt, до офиса</label>
+          <label class="radio"><input type="radio" name="ship" value="speedy"> Speedy, до офиса</label>
+          <label class="radio"><input type="radio" name="ship" value="courier"> Курьер до двери</label>
+        </fieldset>
+        <label class="field">Город и офис или адрес<input name="addr" required></label>
+        <fieldset class="field"><legend>Оплата</legend>
+          <label class="radio"><input type="radio" name="pay" value="cod" checked> Наложенным платежом при получении</label>
+          <label class="radio"><input type="radio" name="pay" value="card"> Картой на сайте</label>
+        </fieldset>
+        <button class="btn btn-primary btn-wide" type="submit">Отправить заказ на ${money(p.total)}</button>
+        <p class="muted" id="coMsg" role="status"></p>
+      </form>
+    </div>
+  </main>
+  ${footer()}`;
+  app.onclick = null; app.oninput = null; app.onchange = null;
+  $("#coForm").onsubmit = (e) => {
+    e.preventDefault();
+    $("#coMsg").textContent = "Это прототип: заказ никуда не отправлен, данные не сохраняются. Здесь будет оплата и приём заказа.";
+  };
+}
+
+function notFound() {
+  app.innerHTML = `${header()}<main class="page"><h1 class="page-title">Такой страницы нет</h1><p class="page-lead">Возможно, ссылка устарела.</p><a class="btn btn-primary" href="#/?to=catalog">Открыть каталог</a></main>${footer()}`;
+}
+
+// ---------- уведомление ----------
+let toastTimer;
+function toast(text) {
+  let t = $(".toast");
+  if (!t) { t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); document.body.append(t); }
+  t.textContent = text; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+// ---------- маршрутизация ----------
+function route(keepScroll = false) {
+  keepScroll = keepScroll === true;
+  const y = window.scrollY;
+  const raw = location.hash.slice(1) || "/";
+  const [path, qs] = raw.split("?");
+  const query = new URLSearchParams(qs || "");
+  const parts = path.split("/").filter(Boolean);
+  app.onclick = null; app.oninput = null; app.onchange = null;
+  document.body.classList.toggle("has-paybar", parts[0] === "editor" || parts[0] === "custom");
+
+  if (keepScroll) query.delete("to");
+  if (!parts.length) viewHome(query);
+  else if (parts[0] === "c") viewCategory(parts[1]);
+  else if (parts[0] === "s") viewStep(parts[1], parts[2], +parts[3] || 1);
+  else if (parts[0] === "editor") viewEditor();
+  else if (parts[0] === "custom") { startCustom(); location.replace("#/editor"); return; }
+  else if (parts[0] === "order") viewOrder();
+  else notFound();
+
+  if (keepScroll) window.scrollTo(0, y);
+  else if (!query.get("to")) window.scrollTo(0, 0);
+}
+
+window.addEventListener("hashchange", route);
+route();
+// Перерисовать, когда загрузятся шрифты: от них зависит подбор кегля
+if (document.fonts) {
+  Promise.all(FONTS.flatMap((f) => [document.fonts.load(`400 20px "${f}"`), document.fonts.load(`700 20px "${f}"`)]))
+    .then(() => route(true));
+}
