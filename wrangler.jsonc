@@ -1,0 +1,8 @@
+{
+  // Статический сайт на Cloudflare Workers (static assets)
+  "name": "lepko",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "."
+  }
+}

@@ -33,12 +33,11 @@ python3 -m http.server 8000
 
 и открыть http://localhost:8000
 
-## Публикация на Cloudflare Pages
+## Публикация на Cloudflare
 
-1. Cloudflare → Workers & Pages → Create → Pages → Connect to Git.
-2. Выбрать репозиторий `Lepko`.
-3. Framework preset: None. Build command: пусто. Build output directory: `/`.
-4. Save and Deploy. Каждый push в `main` обновляет сайт.
+Сайт публикуется как Worker со статическими файлами (настройки в `wrangler.jsonc`, исключения в `.assetsignore`).
+
+Cloudflare → Workers & Pages → Create application → Import a repository → `Lepko`. Project name: `lepko`, Build command: пусто, Deploy command: `npx wrangler deploy`. Каждый push в `main` обновляет сайт.
 
 ## Фото
 
