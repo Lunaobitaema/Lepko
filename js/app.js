@@ -367,7 +367,7 @@ function renderList() {
     <li class="s-row ${s.id === selected ? "is-on" : ""}" data-id="${s.id}">
       <button class="s-pick" data-act="select" data-id="${s.id}" aria-label="Выбрать наклейку">${miniSticker(s)}</button>
       <input class="s-text" data-field="text" data-id="${s.id}" value="${esc(s.text)}" aria-label="Текст наклейки">
-      <button class="icon-btn" data-act="dup" data-id="${s.id}" title="Копия" aria-label="Сделать копию">${iconSVG("box", 18)}</button>
+      <button class="icon-btn" data-act="dup" data-id="${s.id}" title="Добавить копию" aria-label="Добавить копию"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
       <button class="icon-btn" data-act="del" data-id="${s.id}" title="Удалить" aria-label="Удалить наклейку"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </li>`).join("");
 }
@@ -387,6 +387,18 @@ function renderProps() {
     <div class="pb-head"><h2>Эта наклейка</h2></div>
     <label class="field">Текст<input data-field="text" value="${esc(s.text)}"></label>
     <label class="field">Вторая строка <span class="muted">необязательно</span><input data-field="sub" value="${esc(s.sub)}" placeholder="Дата, имя, класс"></label>
+
+    <div class="field fs-field">
+      <div class="fs-head">
+        <label for="fs">Размер текста</label>
+        <span id="fsVal" class="fs-val"></span>
+        <button class="link-btn" data-act="fs-auto" id="fsAuto">Авто</button>
+      </div>
+      <input type="range" id="fs" data-field="fs" step="0.1">
+      <div class="fs-scale muted"><span>мельче</span><span>крупнее</span></div>
+    </div>
+
+    <button class="btn btn-ghost btn-sm btn-view" data-act="view">${iconSVG("search", 18)} Посмотреть в натуральную величину</button>
 
     <fieldset class="field"><legend>Форма</legend><div class="shapes">${SHAPES.map(shapeBtn).join("")}</div></fieldset>
 
@@ -412,6 +424,23 @@ function renderProps() {
       <select data-field="font">${FONTS.map((f) => `<option ${s.font === f ? "selected" : ""} style="font-family:'${f}'">${f}</option>`).join("")}</select>
     </label>
     <button class="btn btn-ghost btn-sm" data-act="apply-all">Применить форму, размер и цвета ко всем</button>`;
+  syncFontSlider();
+}
+
+// Ползунок кегля: пределы зависят от размера наклейки и длины текста
+function syncFontSlider() {
+  const s = current();
+  const r = $("#fs");
+  if (!s || !r) return;
+  const L = stickerLayout(s);
+  const has = L.max > 0;
+  r.disabled = !has;
+  r.min = FONT_MIN;
+  r.max = Math.max(FONT_MIN + 0.1, L.max).toFixed(1);
+  r.value = (has ? L.main : FONT_MIN).toFixed(1);
+  const pt = L.main / 0.3528;
+  $("#fsVal").textContent = has ? `${L.main.toFixed(1).replace(".", ",")} мм · ${Math.round(pt)} pt` : "нет текста";
+  $("#fsAuto").hidden = !s.fs;
 }
 
 function renderSummary() {
@@ -425,13 +454,181 @@ function refresh({ list = false, props = false } = {}) {
   renderSheets(); renderSummary();
   if (list) renderList();
   if (props) renderProps();
+  if (viewerOpen()) renderViewer();
+}
+
+// ---------- натуральная величина ----------
+// Браузер не знает физический размер экрана, поэтому масштаб оценивается
+// по типу устройства, а точно задаётся диагональю экрана или по банковской карте.
+const CARD_W = 85.6, CARD_H = 53.98; // мм, стандарт ISO/IEC 7810 ID-1
+let viewerZoom = 1;
+
+function readPpm() {
+  try { const v = +localStorage.getItem("lepko-ppm"); if (v > 1 && v < 40) return { ppm: v, calibrated: true }; } catch {}
+  const coarse = window.matchMedia("(pointer: coarse)").matches;
+  // CSS-пиксель: на телефонах ≈ 1/160 дюйма, на компьютерах ≈ 1/96 дюйма
+  return { ppm: (coarse ? 160 : 96) / 25.4, calibrated: false };
+}
+function writePpm(v) { try { localStorage.setItem("lepko-ppm", String(v)); } catch {} }
+function clearPpm() { try { localStorage.removeItem("lepko-ppm"); } catch {} }
+
+function viewerOpen() { const d = $("#viewer"); return !!(d && d.open); }
+
+function openViewer() {
+  if (!current()) return;
+  let d = $("#viewer");
+  if (!d) {
+    d = document.createElement("dialog");
+    d.id = "viewer";
+    d.className = "viewer";
+    d.setAttribute("aria-labelledby", "vwTitle");
+    document.body.append(d);
+    d.addEventListener("click", onViewerClick);
+    d.addEventListener("input", onViewerInput);
+    d.addEventListener("close", () => document.body.classList.remove("no-scroll"));
+    window.addEventListener("resize", () => viewerOpen() && renderViewer());
+  }
+  d.innerHTML = `
+    <div class="vw-head">
+      <div>
+        <h2 id="vwTitle">Натуральная величина</h2>
+        <p id="vwSize" class="muted"></p>
+      </div>
+      <div class="vw-tools">
+        <button class="vw-btn" data-vw="zoom" id="vwZoom" aria-pressed="false"></button>
+        <button class="vw-btn vw-close" data-vw="close" aria-label="Закрыть">${iconSVG("close", 22)}</button>
+      </div>
+    </div>
+    <div class="vw-scroll" id="vwScroll"><div class="vw-grid" id="vwGrid"></div></div>
+    <details class="vw-cal" id="vwCal">
+      <summary id="vwCalSum"></summary>
+      <div class="vw-cal-body">
+        <p class="muted">Сайт не знает физический размер вашего экрана. Укажите диагональ или подгоните прямоугольник под банковскую карту, и линейки станут точными.</p>
+        <div class="vw-cal-row">
+          <label class="field">Диагональ экрана, дюймы
+            <input type="number" id="vwDiag" min="4" max="40" step="0.1" placeholder="например, 6.1">
+          </label>
+          <button class="btn btn-primary btn-sm" data-vw="diag">Применить</button>
+        </div>
+        <p class="vw-or muted">или приложите банковскую карту к экрану и подгоните рамку под её размер</p>
+        <div class="vw-card-wrap"><div class="vw-card" id="vwCard"><span>85,6 × 54 мм</span></div></div>
+        <div class="vw-cal-row">
+          <button class="btn btn-ghost btn-sm" data-vw="card-" aria-label="Уменьшить рамку">−</button>
+          <input type="range" id="vwCardRange" min="2" max="12" step="0.01" aria-label="Размер рамки">
+          <button class="btn btn-ghost btn-sm" data-vw="card+" aria-label="Увеличить рамку">+</button>
+        </div>
+        <button class="link-btn" data-vw="reset">Сбросить настройку масштаба</button>
+      </div>
+    </details>`;
+  document.body.classList.add("no-scroll");
+  d.showModal();
+  renderViewer();
+}
+
+function renderViewer() {
+  const s = current();
+  const d = $("#viewer");
+  if (!s || !d) return;
+  const { ppm, calibrated } = readPpm();
+  const z = viewerZoom;
+  const k = ppm * z;              // экранных px на 1 мм
+  const R = 26;                   // толщина линейки, px
+  const P = 5;                    // поле вокруг наклейки, мм
+  const scroll = $("#vwScroll");
+  const availW = Math.max(0, scroll.clientWidth - R), availH = Math.max(0, scroll.clientHeight - R);
+  const lenX = Math.max(s.w + P * 2, availW / k);
+  const lenY = Math.max(s.h + P * 2, availH / k);
+
+  $("#vwSize").textContent = `${s.w} × ${s.h} мм${z === 2 ? ", увеличено в 2 раза" : ""}`;
+  const zb = $("#vwZoom");
+  zb.innerHTML = `${iconSVG(z === 2 ? "zoomOut" : "zoomIn", 20)}<span>${z === 2 ? "1:1" : "×2"}</span>`;
+  zb.setAttribute("aria-pressed", String(z === 2));
+  zb.setAttribute("aria-label", z === 2 ? "Вернуть натуральный размер" : "Увеличить в 2 раза");
+
+  const grid = $("#vwGrid");
+  grid.style.setProperty("--r", R + "px");
+  grid.style.setProperty("--mm", k + "px");
+  grid.style.setProperty("--off", (P * k) + "px");
+  grid.innerHTML = `
+    <div class="vw-corner">мм</div>
+    <div class="vw-ruler vw-ruler-x">${rulerSVG(lenX, k, R, P, "x")}</div>
+    <div class="vw-ruler vw-ruler-y">${rulerSVG(lenY, k, R, P, "y")}</div>
+    <div class="vw-stage" style="width:${lenX * k}px;height:${lenY * k}px">
+      <svg class="vw-sticker" style="left:${P * k}px;top:${P * k}px;width:${s.w * k}px;height:${s.h * k}px" viewBox="-0.5 -0.5 ${s.w + 1} ${s.h + 1}" aria-label="Наклейка ${esc(s.text)}">
+        ${stickerSVG({ ...s, id: "vw" }, 0, 0)}
+      </svg>
+    </div>`;
+
+  $("#vwCalSum").innerHTML = calibrated
+    ? `${iconSVG("ruler", 18)} Масштаб настроен под ваш экран`
+    : `${iconSVG("ruler", 18)} Масштаб примерный. Настроить точно`;
+  const card = $("#vwCard");
+  // на узком экране карта не влезает горизонтально — показываем её вертикально
+  const portrait = CARD_W * ppm > $("#vwCal").clientWidth - 40;
+  card.style.width = (portrait ? CARD_H : CARD_W) * ppm + "px";
+  card.style.height = (portrait ? CARD_W : CARD_H) * ppm + "px";
+  card.querySelector("span").textContent = portrait ? "54 × 85,6 мм" : "85,6 × 54 мм";
+  card.style.borderRadius = 3.18 * ppm + "px";
+  $("#vwCardRange").value = ppm.toFixed(2);
+}
+
+// Линейка: деления каждый мм, средние каждые 5 мм, длинные с подписью каждые 10 мм.
+// Ноль совпадает с краем наклейки.
+function rulerSVG(lenMm, k, R, P, axis) {
+  const total = lenMm * k;
+  let ticks = "", labels = "";
+  const step = k < 2.5 ? 2 : 1; // на очень мелком масштабе — через 2 мм
+  for (let mm = -P; mm <= lenMm - P + 0.001; mm += step) {
+    const pos = (mm + P) * k;
+    const r = Math.round(mm);
+    const long = r % 10 === 0, mid = r % 5 === 0;
+    const t = long ? R * 0.62 : mid ? R * 0.42 : R * 0.24;
+    if (axis === "x") {
+      ticks += `M${pos} ${R}V${R - t}`;
+      if (long && r >= 0) labels += `<text x="${pos + 2}" y="${R * 0.42}">${r}</text>`;
+    } else {
+      ticks += `M${R} ${pos}H${R - t}`;
+      if (long && r >= 0) labels += `<text x="${R * 0.4}" y="${pos + 2}" transform="rotate(-90 ${R * 0.4} ${pos + 2})" text-anchor="end">${r}</text>`;
+    }
+  }
+  const w = axis === "x" ? total : R, h = axis === "x" ? R : total;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+    <path d="${ticks}" stroke="currentColor" stroke-width="1" shape-rendering="crispEdges"/>
+    <g class="vw-num">${labels}</g>
+  </svg>`;
+}
+
+function onViewerClick(e) {
+  const d = $("#viewer");
+  if (e.target === d) { d.close(); return; } // клик по затемнению
+  const b = e.target.closest("[data-vw]");
+  if (!b) return;
+  const { ppm } = readPpm();
+  switch (b.dataset.vw) {
+    case "close": d.close(); break;
+    case "zoom": viewerZoom = viewerZoom === 1 ? 2 : 1; renderViewer(); break;
+    case "diag": {
+      const inch = parseFloat(String($("#vwDiag").value).replace(",", "."));
+      if (!(inch >= 4 && inch <= 40)) { toast("Введите диагональ от 4 до 40 дюймов"); break; }
+      const diagPx = Math.hypot(screen.width, screen.height); // в CSS-пикселях
+      writePpm(diagPx / (inch * 25.4));
+      toast("Масштаб настроен"); renderViewer(); break;
+    }
+    case "card-": writePpm(ppm * 0.99); renderViewer(); break;
+    case "card+": writePpm(ppm * 1.01); renderViewer(); break;
+    case "reset": clearPpm(); toast("Масштаб снова примерный"); renderViewer(); break;
+  }
+}
+
+function onViewerInput(e) {
+  if (e.target.id === "vwCardRange") { writePpm(+e.target.value); renderViewer(); }
 }
 
 function current() { return order.stickers.find((x) => x.id === selected); }
 
 function onEditorClick(e) {
   const stk = e.target.closest(".sheets .stk");
-  if (stk) { selected = stk.dataset.id; refresh({ list: true, props: true }); scrollPropsOnMobile(); return; }
+  if (stk) { selected = stk.dataset.id; refresh({ list: true, props: true }); openViewer(); return; }
 
   const sb = e.target.closest("[data-sheet]");
   if (sb) { order.sheet = sb.dataset.sheet; app.querySelectorAll("[data-sheet]").forEach((b) => b.classList.toggle("is-on", b === sb)); refresh(); return; }
@@ -442,6 +639,8 @@ function onEditorClick(e) {
   const id = b.dataset.id;
   switch (b.dataset.act) {
     case "select": selected = id; refresh({ list: true, props: true }); scrollPropsOnMobile(); break;
+    case "view": openViewer(); break;
+    case "fs-auto": delete s.fs; refresh({ props: true }); break;
     case "dup": {
       const i = order.stickers.findIndex((x) => x.id === id);
       const copy = { ...order.stickers[i], id: uid() };
@@ -513,10 +712,17 @@ function onEditorInput(e) {
   } else if (field === "font") {
     s.font = el.value;
     s.weight = el.value === "Caveat" || el.value === "PT Serif" || el.value === "Comfortaa" ? 700 : 600;
+  } else if (field === "fs") {
+    s.fs = Math.round(+el.value * 10) / 10;
   } else {
     s[field] = el.value;
   }
   save(); renderSheets(); renderSummary();
+  if (s.id === selected) { syncFontSlider(); if (viewerOpen()) renderViewer(); }
+  if (field === "fs") {
+    const pick = $(`.s-row[data-id="${s.id}"] .s-pick`);
+    if (pick) pick.innerHTML = miniSticker(s);
+  }
   // синхронизация второго поля с тем же текстом
   if (field === "text") {
     app.querySelectorAll(`[data-field="text"]`).forEach((inp) => {
@@ -605,6 +811,7 @@ function route(keepScroll = false) {
   const query = new URLSearchParams(qs || "");
   const parts = path.split("/").filter(Boolean);
   app.onclick = null; app.oninput = null; app.onchange = null;
+  if (viewerOpen()) $("#viewer").close();
   document.body.classList.toggle("has-paybar", parts[0] === "editor" || parts[0] === "custom");
 
   if (keepScroll) query.delete("to");

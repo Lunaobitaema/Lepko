@@ -61,43 +61,62 @@ function innerBox(s) {
   return { x: left, y: pad, w: w - left - right, h: h - pad * 2 };
 }
 
-function stickerContent(s, x, y) {
-  const box = innerBox(s);
-  const bx = x + box.x, by = y + box.y;
-  const fg = s.fg, font = s.font, weight = s.weight || 600;
-  const lines = [s.text, s.sub].filter(Boolean);
-  let out = "";
+// Раскладка содержимого наклейки: где картинка, где текст и какой кегль
+// auto — подобранный размер, max — самый крупный, который ещё влезает
+const FONT_MIN = 1.2; // мм, меньше плоттер и глаз не различат
 
+function stickerLayout(s) {
+  const box = innerBox(s);
+  const font = s.font, weight = s.weight || 600;
+  const lines = [s.text, s.sub].filter(Boolean);
   const hasIcon = !!ICONS[s.icon];
   const horizontal = box.w / box.h >= 1.6;
-  let tx = bx, ty = by, tw = box.w, th = box.h, anchor = "middle";
+  let icon = null, tx = box.x, ty = box.y, tw = box.w, th = box.h;
 
   if (hasIcon) {
     if (horizontal) {
       const is = Math.min(box.h, box.w * 0.3);
-      out += `<g transform="translate(${bx} ${by + (box.h - is) / 2}) scale(${is / 24})" fill="none" stroke="${fg}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[s.icon]}"/></g>`;
-      tx = bx + is + box.h * 0.18; tw = box.w - is - box.h * 0.18;
+      icon = { x: box.x, y: box.y + (box.h - is) / 2, size: is };
+      tx = box.x + is + box.h * 0.18; tw = box.w - is - box.h * 0.18;
     } else {
       const is = Math.min(box.w * 0.6, box.h * (lines.length ? 0.55 : 0.9));
-      out += `<g transform="translate(${bx + (box.w - is) / 2} ${by}) scale(${is / 24})" fill="none" stroke="${fg}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[s.icon]}"/></g>`;
-      ty = by + is + box.h * 0.06; th = box.h - is - box.h * 0.06;
+      icon = { x: box.x + (box.w - is) / 2, y: box.y, size: is };
+      ty = box.y + is + box.h * 0.06; th = box.h - is - box.h * 0.06;
     }
   }
 
-  if (lines.length && th > 1) {
-    const mainShare = lines.length === 2 ? 0.62 : 1;
-    // потолок кегля от высоты наклейки, чтобы короткие слова не раздувались
-    const cap = s.h * (lines.length === 2 ? 0.3 : 0.38);
-    const mainSize = Math.min(cap, fitSize(lines[0], font, weight, tw, th * mainShare * 0.92));
-    const subSize = lines[1] ? Math.min(mainSize * 0.62, fitSize(lines[1], font, 400, tw, th * (1 - mainShare) * 0.92)) : 0;
-    const total = mainSize * 0.92 + (subSize ? subSize * 1.15 : 0);
-    let cy = ty + (th - total) / 2 + mainSize * 0.78;
-    const cx = hasIcon && horizontal ? tx : tx + tw / 2;
-    anchor = hasIcon && horizontal ? "start" : "middle";
-    out += `<text x="${cx}" y="${cy}" font-family="${esc(fontStack(font))}" font-weight="${weight}" font-size="${mainSize.toFixed(2)}" fill="${fg}" text-anchor="${anchor}">${esc(lines[0])}</text>`;
-    if (subSize) {
-      cy += subSize * 1.15 + mainSize * 0.08;
-      out += `<text x="${cx}" y="${cy}" font-family="${esc(fontStack(font))}" font-weight="400" font-size="${subSize.toFixed(2)}" fill="${fg}" opacity=".82" text-anchor="${anchor}">${esc(lines[1])}</text>`;
+  const res = { lines, icon, tx, ty, tw, th, horizontal: hasIcon && horizontal, auto: 0, max: 0, main: 0, sub: 0 };
+  if (!lines.length || th <= 1) return res;
+
+  const two = lines.length === 2;
+  const mainShare = two ? 0.62 : 1;
+  const maxMain = fitSize(lines[0], font, weight, tw, th * mainShare * 0.92);
+  // если вторая строка длинная, основной кегль ограничиваем, чтобы она тоже поместилась
+  const subMax = two ? fitSize(lines[1], font, 400, tw, th * (1 - mainShare) * 0.92) / 0.62 : Infinity;
+  const max = Math.max(FONT_MIN, Math.min(maxMain, two ? Math.max(subMax, maxMain * 0.5) : maxMain));
+  // по умолчанию — не крупнее доли высоты, чтобы короткие слова не раздувались
+  const auto = Math.min(max, s.h * (two ? 0.3 : 0.38));
+  const main = s.fs ? Math.max(FONT_MIN, Math.min(s.fs, max)) : auto;
+  const sub = two ? Math.min(main * 0.62, fitSize(lines[1], font, 400, tw, th * 0.92)) : 0;
+  return Object.assign(res, { auto, max, main, sub });
+}
+
+function stickerContent(s, x, y) {
+  const L = stickerLayout(s);
+  const fg = s.fg, font = s.font, weight = s.weight || 600;
+  let out = "";
+  if (L.icon) {
+    out += `<g transform="translate(${x + L.icon.x} ${y + L.icon.y}) scale(${L.icon.size / 24})" fill="none" stroke="${fg}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[s.icon]}"/></g>`;
+  }
+  if (L.main) {
+    const total = L.main * 0.92 + (L.sub ? L.sub * 1.15 : 0);
+    let cy = y + L.ty + (L.th - total) / 2 + L.main * 0.78;
+    const cx = x + (L.horizontal ? L.tx : L.tx + L.tw / 2);
+    const anchor = L.horizontal ? "start" : "middle";
+    out += `<text x="${cx}" y="${cy}" font-family="${esc(fontStack(font))}" font-weight="${weight}" font-size="${L.main.toFixed(2)}" fill="${fg}" text-anchor="${anchor}">${esc(L.lines[0])}</text>`;
+    if (L.sub) {
+      cy += L.sub * 1.15 + L.main * 0.08;
+      out += `<text x="${cx}" y="${cy}" font-family="${esc(fontStack(font))}" font-weight="400" font-size="${L.sub.toFixed(2)}" fill="${fg}" opacity=".82" text-anchor="${anchor}">${esc(L.lines[1])}</text>`;
     }
   }
   return out;

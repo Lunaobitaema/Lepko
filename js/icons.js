@@ -34,7 +34,17 @@ const ICON_NAMES = {
   shirt: "Одежда", ball: "Мяч", car: "Машинка", sun: "Солнце", moon: "Луна", wifi: "Wi-Fi", key: "Ключ",
 };
 
+// Значки интерфейса (на наклейки не попадают)
+const UI_ICONS = {
+  search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4",
+  zoomIn: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4M11 8v6M8 11h6",
+  zoomOut: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4M8 11h6",
+  close: "M6 6l12 12M18 6L6 18",
+  ruler: "M3 17L17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2",
+};
+
 function iconSVG(name, size = 20, extra = "") {
-  if (!ICONS[name]) return "";
-  return `<svg class="ico" ${extra} width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[name]}"/></svg>`;
+  const d = ICONS[name] || UI_ICONS[name];
+  if (!d) return "";
+  return `<svg class="ico" ${extra} width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
 }
