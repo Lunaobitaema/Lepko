@@ -135,18 +135,36 @@ function stickerSVG(s, x, y, opts = {}) {
   </g>`;
 }
 
-// Раскладка по полкам, по порядку; когда лист заполнен — следующий лист
+// Количество наклеек одного вида
+const qtyOf = (s) => Math.max(1, Math.round(+s.qty || 1));
+const totalQty = (stickers) => stickers.reduce((n, s) => n + qtyOf(s), 0);
+
+// Одинаковые наклейки (всё, кроме id и количества) объединяются в одну строку
+const stickerKey = ({ id, qty, ...rest }) => JSON.stringify(Object.keys(rest).sort().map((k) => [k, rest[k]]));
+function mergeDuplicates(stickers) {
+  const out = [], seen = new Map();
+  for (const s of stickers) {
+    const k = stickerKey(s);
+    if (seen.has(k)) seen.get(k).qty = qtyOf(seen.get(k)) + qtyOf(s);
+    else { const c = { ...s, qty: qtyOf(s) }; seen.set(k, c); out.push(c); }
+  }
+  return out;
+}
+
+// Раскладка по полкам, по порядку; когда лист заполнен — следующий лист.
+// Каждая наклейка ставится столько раз, сколько указано в qty.
 function pack(stickers, sheetKey) {
   const sh = SHEETS[sheetKey];
   const W = sh.w - SHEET_MARGIN * 2, H = sh.h - SHEET_MARGIN * 2;
   const sheets = [];
-  const tooBig = [];
+  const tooBig = new Set();
   let cur = null;
   const newSheet = () => { cur = { shelves: [], items: [], usedH: 0 }; sheets.push(cur); };
   newSheet();
 
-  for (const s of stickers) {
-    if (s.w > W || s.h > H) { tooBig.push(s.id); continue; }
+  const copies = stickers.flatMap((s) => Array(qtyOf(s)).fill(s));
+  for (const s of copies) {
+    if (s.w > W || s.h > H) { tooBig.add(s.id); continue; }
     let placed = false;
     for (const shelf of cur.shelves) {
       if (s.h <= shelf.h && shelf.x + s.w <= W) {
@@ -164,16 +182,19 @@ function pack(stickers, sheetKey) {
     cur.items.push({ s, x: 0, y: yy });
   }
   if (sheets.length > 1 && !sheets[sheets.length - 1].items.length) sheets.pop();
-  return { sheets, tooBig, W, H };
+  return { sheets, tooBig: [...tooBig], W, H };
 }
 
-// Сколько ещё копий наклейки s влезет на последний лист
+// Сколько ещё копий наклейки s влезет, не добавляя новый лист
 function spaceLeftFor(s, stickers, sheetKey) {
   const base = pack(stickers, sheetKey).sheets.length;
+  const probe = stickers.map((x) => ({ ...x }));
+  let target = probe.find((x) => x.id === s.id);
+  if (!target) { target = { ...s, qty: 0 }; probe.push(target); }
+  const start = qtyOf(target) - (target.qty === 0 ? 1 : 0);
   let n = 0;
-  const probe = [...stickers];
-  while (n < 200) {
-    probe.push({ ...s, id: "probe" + n });
+  while (n < 500) {
+    target.qty = start + n + 1;
     if (pack(probe, sheetKey).sheets.length > base) break;
     n++;
   }

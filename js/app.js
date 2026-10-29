@@ -10,8 +10,12 @@ let order = load();
 let selected = null;
 
 function load() {
-  try { return { ...EMPTY, ...JSON.parse(localStorage.getItem("lepko-order") || "{}") }; }
-  catch { return { ...EMPTY }; }
+  let o;
+  try { o = { ...EMPTY, ...JSON.parse(localStorage.getItem("lepko-order") || "{}") }; }
+  catch { o = { ...EMPTY }; }
+  // старые заказы хранили каждую копию отдельно — объединяем в строки с количеством
+  o.stickers = mergeDuplicates(o.stickers || []);
+  return o;
 }
 function save() {
   try { localStorage.setItem("lepko-order", JSON.stringify(order)); } catch {}
@@ -30,7 +34,7 @@ function applyStyle(styleKey) {
 function startFromSolution(cat, sol) {
   order = {
     cat: cat.id, sol: sol.id, style: sol.style, material: sol.material, sheet: sol.sheet,
-    stickers: sol.stickers.map((s, i) => styled({ ...s, id: uid() }, sol.style, i)),
+    stickers: mergeDuplicates(sol.stickers).map((s, i) => styled({ ...s, id: uid() }, sol.style, i)),
   };
   save();
 }
@@ -50,7 +54,7 @@ function header() {
       <a href="#/?to=catalog">Каталог</a>
       <a href="#/?to=how">Как это работает</a>
       <a href="#/custom">Своя наклейка</a>
-      <a href="#/editor" class="cart-link" ${order.stickers.length ? "" : "hidden"}>Мой лист <b class="cart-count">${order.stickers.length}</b></a>
+      <a href="#/editor" class="cart-link" ${order.stickers.length ? "" : "hidden"}>Мой лист <b class="cart-count">${totalQty(order.stickers)}</b></a>
     </nav>
   </header>`;
 }
@@ -59,7 +63,7 @@ function updateCartBadge() {
   if (!a) return;
   a.hidden = !order.stickers.length;
   const b = $(".cart-count", a);
-  if (b) b.textContent = order.stickers.length;
+  if (b) b.textContent = totalQty(order.stickers);
 }
 
 function footer() {
@@ -361,15 +365,44 @@ function renderSheets() {
     </figure>`).join("");
 }
 
+const QTY_MAX = 999;
+const svgMinus = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>`;
+const svgPlus = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>`;
+
+function renderCount() {
+  const n = totalQty(order.stickers), kinds = order.stickers.length;
+  $("#count").textContent = `${n} шт.${kinds > 1 ? `, ${kinds} ${plural(kinds, "вид", "вида", "видов")}` : ""}`;
+}
+
 function renderList() {
-  $("#count").textContent = `${order.stickers.length} шт.`;
-  $("#list").innerHTML = order.stickers.map((s) => `
+  renderCount();
+  $("#list").innerHTML = order.stickers.map((s) => {
+    const q = qtyOf(s);
+    return `
     <li class="s-row ${s.id === selected ? "is-on" : ""}" data-id="${s.id}">
       <button class="s-pick" data-act="select" data-id="${s.id}" aria-label="Выбрать наклейку">${miniSticker(s)}</button>
       <input class="s-text" data-field="text" data-id="${s.id}" value="${esc(s.text)}" aria-label="Текст наклейки">
-      <button class="icon-btn" data-act="dup" data-id="${s.id}" title="Добавить копию" aria-label="Добавить копию"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+      ${qtyControl(s)}
       <button class="icon-btn" data-act="del" data-id="${s.id}" title="Удалить" aria-label="Удалить наклейку"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-    </li>`).join("");
+    </li>`;
+  }).join("");
+}
+
+// Обновить только счётчик в строке, не перерисовывая список (чтобы не терять фокус)
+function syncQtyRow(s) {
+  const q = qtyOf(s);
+  app.querySelectorAll(`.qty-in[data-id="${s.id}"]`).forEach((inp) => { if (document.activeElement !== inp) inp.value = q; });
+  app.querySelectorAll(`[data-act="qty-"][data-id="${s.id}"]`).forEach((b) => (b.disabled = q <= 1));
+  app.querySelectorAll(`[data-act="qty+"][data-id="${s.id}"]`).forEach((b) => (b.disabled = q >= QTY_MAX));
+}
+
+function qtyControl(s, cls = "") {
+  const q = qtyOf(s);
+  return `<div class="qty ${cls}" role="group" aria-label="Количество">
+    <button class="qty-btn" data-act="qty-" data-id="${s.id}" aria-label="Уменьшить количество" ${q <= 1 ? "disabled" : ""}>${svgMinus}</button>
+    <input class="qty-in" type="number" inputmode="numeric" min="1" max="${QTY_MAX}" data-field="qty" data-id="${s.id}" value="${q}" aria-label="Количество, шт.">
+    <button class="qty-btn" data-act="qty+" data-id="${s.id}" aria-label="Увеличить количество" ${q >= QTY_MAX ? "disabled" : ""}>${svgPlus}</button>
+  </div>`;
 }
 
 const SHAPES = [["rect", "Прямоугольник"], ["round", "Скруглённая"], ["circle", "Круг"], ["oval", "Овал"], ["tag", "Бирка"], ["banner", "Флажок"]];
@@ -387,6 +420,12 @@ function renderProps() {
     <div class="pb-head"><h2>Эта наклейка</h2></div>
     <label class="field">Текст<input data-field="text" value="${esc(s.text)}"></label>
     <label class="field">Вторая строка <span class="muted">необязательно</span><input data-field="sub" value="${esc(s.sub)}" placeholder="Дата, имя, класс"></label>
+
+    <div class="field qty-field">
+      <span>Сколько штук</span>
+      ${qtyControl(s, "qty-lg")}
+      <button class="link-btn" data-act="fill">Заполнить лист до конца</button>
+    </div>
 
     <div class="field fs-field">
       <div class="fs-head">
@@ -446,7 +485,8 @@ function syncFontSlider() {
 function renderSummary() {
   const p = priceOf(order);
   const m = MATERIALS[order.material];
-  $("#summary").innerHTML = `<b>${money(p.total)}</b><span>${p.sheets} ${plural(p.sheets, "лист", "листа", "листов")} ${order.sheet}, ${order.stickers.length} ${plural(order.stickers.length, "наклейка", "наклейки", "наклеек")}, ${m.name.toLowerCase()}</span>`;
+  const n = totalQty(order.stickers);
+  $("#summary").innerHTML = `<b>${money(p.total)}</b><span>${p.sheets} ${plural(p.sheets, "лист", "листа", "листов")} ${order.sheet}, ${n} ${plural(n, "наклейка", "наклейки", "наклеек")}, ${m.name.toLowerCase()}</span>`;
 }
 
 function refresh({ list = false, props = false } = {}) {
@@ -641,11 +681,13 @@ function onEditorClick(e) {
     case "select": selected = id; refresh({ list: true, props: true }); scrollPropsOnMobile(); break;
     case "view": openViewer(); break;
     case "fs-auto": delete s.fs; refresh({ props: true }); break;
-    case "dup": {
-      const i = order.stickers.findIndex((x) => x.id === id);
-      const copy = { ...order.stickers[i], id: uid() };
-      order.stickers.splice(i + 1, 0, copy); selected = copy.id;
-      refresh({ list: true, props: true }); break;
+    case "qty+":
+    case "qty-": {
+      const t = order.stickers.find((x) => x.id === id);
+      if (!t) break;
+      t.qty = Math.min(QTY_MAX, Math.max(1, qtyOf(t) + (b.dataset.act === "qty+" ? 1 : -1)));
+      save(); renderSheets(); renderSummary(); renderCount(); syncQtyRow(t);
+      break;
     }
     case "del": {
       order.stickers = order.stickers.filter((x) => x.id !== id);
@@ -655,7 +697,7 @@ function onEditorClick(e) {
     }
     case "add": {
       const base = s || order.stickers[order.stickers.length - 1];
-      const n = { ...base, id: uid(), text: "Новая", sub: "" };
+      const n = { ...base, id: uid(), text: "Новая", sub: "", qty: 1 };
       order.stickers.push(n); selected = n.id;
       refresh({ list: true, props: true });
       requestAnimationFrame(() => $(`#list [data-id="${n.id}"].s-text`)?.select());
@@ -664,9 +706,9 @@ function onEditorClick(e) {
     case "fill": {
       const base = s || order.stickers[0];
       const k = spaceLeftFor(base, order.stickers, order.sheet);
-      for (let i = 0; i < k; i++) order.stickers.push({ ...base, id: uid() });
-      toast(k ? `Добавлено копий: ${k}` : "На последнем листе нет места для этой наклейки");
-      refresh({ list: true }); break;
+      base.qty = qtyOf(base) + k;
+      toast(k ? `«${base.text}»: +${k} шт., теперь ${base.qty}` : "На последнем листе нет места для этой наклейки");
+      refresh({ list: true, props: true }); break;
     }
     case "bulk": {
       const lines = $("#bulk").value.split("\n").map((x) => x.trim()).filter(Boolean);
@@ -674,8 +716,9 @@ function onEditorClick(e) {
       const base = s || order.stickers[0];
       lines.forEach((text) => {
         const hit = ICON_WORDS.find(([re]) => re.test(text));
-        order.stickers.push({ ...base, id: uid(), text, sub: "", icon: hit ? hit[1] : base.icon });
+        order.stickers.push({ ...base, id: uid(), text, sub: "", qty: 1, icon: hit ? hit[1] : base.icon });
       });
+      order.stickers = mergeDuplicates(order.stickers);
       $("#bulk").value = "";
       toast(`Добавлено: ${lines.length}`);
       refresh({ list: true }); break;
@@ -692,7 +735,8 @@ function onEditorClick(e) {
     case "bg": s.bg = b.dataset.v; refresh({ list: true, props: true }); break;
     case "fg": s.fg = b.dataset.v; refresh({ list: true, props: true }); break;
     case "apply-all":
-      order.stickers = order.stickers.map((x) => ({ ...x, shape: s.shape, w: s.w, h: s.h, bg: s.bg, fg: s.fg, font: s.font, weight: s.weight }));
+      order.stickers = mergeDuplicates(order.stickers.map((x) => ({ ...x, shape: s.shape, w: s.w, h: s.h, bg: s.bg, fg: s.fg, font: s.font, weight: s.weight })));
+      if (!current()) selected = order.stickers[0].id;
       toast("Готово: все наклейки одинаковые по форме и цвету");
       refresh({ list: true }); break;
   }
@@ -714,6 +758,12 @@ function onEditorInput(e) {
     s.weight = el.value === "Caveat" || el.value === "PT Serif" || el.value === "Comfortaa" ? 700 : 600;
   } else if (field === "fs") {
     s.fs = Math.round(+el.value * 10) / 10;
+  } else if (field === "qty") {
+    const v = Math.round(+el.value);
+    if (!v || v < 1) return; // пустое поле во время ввода — ждём
+    s.qty = Math.min(QTY_MAX, v);
+    save(); renderSheets(); renderSummary(); renderCount(); syncQtyRow(s);
+    return;
   } else {
     s[field] = el.value;
   }
@@ -735,6 +785,11 @@ function onEditorInput(e) {
 }
 
 function onEditorChange(e) {
+  if (e.target.dataset.field === "qty") {
+    const s = order.stickers.find((x) => x.id === e.target.dataset.id);
+    if (s) e.target.value = qtyOf(s); // вернуть корректное число, если поле оставили пустым
+    return;
+  }
   if (e.target.id === "material") { order.material = e.target.value; refresh(); }
   if (e.target.dataset.field === "w" || e.target.dataset.field === "h" || e.target.dataset.field === "font") refresh({ list: true, props: true });
 }
@@ -756,7 +811,7 @@ function viewOrder() {
       <section class="co-sum" aria-label="Ваш заказ">
         <div class="co-sheets">${sheets.map((s) => `<figure class="sheet sheet-sm" style="--w:${SHEETS[order.sheet].w};--h:${SHEETS[order.sheet].h}">${sheetSVG(s, order.sheet)}</figure>`).join("")}</div>
         <dl class="co-dl">
-          <div><dt>Наклейки</dt><dd>${order.stickers.length} шт.</dd></div>
+          <div><dt>Наклейки</dt><dd>${totalQty(order.stickers)} шт.${order.stickers.length > 1 ? `, ${order.stickers.length} ${plural(order.stickers.length, "вид", "вида", "видов")}` : ""}</dd></div>
           <div><dt>Листы</dt><dd>${p.sheets} × ${order.sheet}, по ${money(p.each)}</dd></div>
           <div><dt>Материал</dt><dd>${MATERIALS[order.material].name}</dd></div>
           <div class="co-total"><dt>Итого</dt><dd>${money(p.total)}</dd></div>
