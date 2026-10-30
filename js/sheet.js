@@ -292,8 +292,7 @@ function spaceLeftFor(s, stickers, sheetKey, opt = 0) {
 function sheetSVG(sheet, sheetKey, opts = {}) {
   const sh = SHEETS[sheetKey];
   const liner = "#EEF1F4";
-  const m = 3.5, q = 4.5; // метки плоттера
-  const marks = `<g fill="#1C2340"><rect x="${m}" y="${m}" width="${q}" height="${q}"/><rect x="${sh.w - m - q}" y="${m}" width="${q}" height="${q}"/><rect x="${m}" y="${sh.h - m - q}" width="${q}" height="${q}"/></g>`;
+  // метки плоттера клиенту не показываем: это техническая разметка сборки для печати
   const items = sheet.items.map(({ s, x, y, rot }) => {
     const o = { selected: opts.selected === s.id, liner };
     if (!rot) return stickerSVG(s, SHEET_MARGIN + x, SHEET_MARGIN + y, o);
@@ -302,7 +301,7 @@ function sheetSVG(sheet, sheetKey, opts = {}) {
   }).join("");
   return `<svg class="sheet-svg" viewBox="0 0 ${sh.w} ${sh.h}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Лист ${sh.label} с наклейками">
     <rect width="${sh.w}" height="${sh.h}" fill="${liner}"/>
-    ${marks}${items}
+    ${items}
   </svg>`;
 }
 
