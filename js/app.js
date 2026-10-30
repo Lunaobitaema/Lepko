@@ -113,7 +113,7 @@ function footer() {
     <div class="foot-row">
       <span class="logo logo-sm"><span>лепко</span></span>
       <p>Наклейки для порядка дома. Варна, доставка по всей Болгарии.</p>
-      <a class="foot-lab" href="#/lab">Лаборатория</a>
+      <span class="foot-links"><a href="#/labels">Этикетки для бизнеса</a><a href="#/lab">Лаборатория</a></span>
     </div>
     <p class="foot-note">Прототип. Фото временные, с <a href="https://unsplash.com/?utm_source=lepko&utm_medium=referral" target="_blank" rel="noopener">Unsplash</a>: ${credits}.</p>
   </footer>`;
@@ -194,6 +194,18 @@ function viewHome(query) {
           </div>
         </a>
       </div>
+    </section>
+
+    <section class="section" aria-labelledby="biz-title">
+      <a class="biz" href="#/labels">
+        <div class="biz-photo">${photoImg("1669384536024-d091ddc00f4c", "Этикетки на банках мёда", 800)}</div>
+        <div class="biz-body">
+          <p class="br-kicker">Для мастеров и небольшого бизнеса</p>
+          <h2 id="biz-title">Этикетки для вашего товара</h2>
+          <p>Мёд, мыло, свечи, косметика, домашние напитки. Индивидуальный дизайн и тираж от одного листа, с личной работой с каждым клиентом.</p>
+          <span class="btn btn-primary">Подробнее</span>
+        </div>
+      </a>
     </section>
 
     <section class="section how" id="how" aria-labelledby="h-title">
@@ -1111,6 +1123,7 @@ function route(keepScroll = false) {
   else if (parts[0] === "s") viewStep(parts[1], parts[2], +parts[3] || 1, query);
   else if (parts[0] === "set") viewSet();
   else if (parts[0] === "lab") viewLab();
+  else if (parts[0] === "labels") viewBrand();
   else if (parts[0] === "w") { if (openWork(parts[1])) location.replace("#/editor"); else location.replace("#/set"); return; }
   else if (parts[0] === "editor") viewEditor();
   else if (parts[0] === "custom") { startCustom(); location.replace("#/editor"); return; }
@@ -1118,6 +1131,7 @@ function route(keepScroll = false) {
   else notFound();
   setTopHeight();
 
+  if (query.get("to") && parts[0] && parts[0] !== "") requestAnimationFrame(() => document.getElementById(query.get("to"))?.scrollIntoView({ behavior: "smooth" }));
   if (keepScroll) window.scrollTo(0, y);
   else if (!query.get("to")) window.scrollTo(0, 0);
 }
