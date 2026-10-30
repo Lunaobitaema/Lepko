@@ -397,6 +397,38 @@ body.no-scroll { overflow: hidden; }
   .vw-head h2 { font-size: 16px; }
 }
 
+/* ---------- работа в наборе ---------- */
+.work-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; margin-bottom: 18px; }
+.work-name { display: flex; flex-direction: column; gap: 4px; flex: 1 1 260px; max-width: 520px; }
+.work-name .muted { font-size: 13px; }
+.work-name input { font: 600 20px/1.2 var(--display); border: 1px solid transparent; border-radius: 10px; padding: 6px 10px; margin-left: -10px; background: transparent; }
+.work-name input:hover { border-color: var(--line); background: var(--paper); }
+.work-name input:focus { border-color: var(--cobalt); background: var(--paper); outline: none; }
+.work-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.paybar #summary span + span { color: var(--cobalt); font-weight: 600; }
+
+/* ---------- мой набор ---------- */
+.works { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 16px; margin-top: 24px; }
+.work { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 16px; padding: 14px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); color: var(--ink); text-decoration: none; }
+.work.is-active { border-color: var(--cobalt); box-shadow: 0 0 0 3px rgba(47, 91, 211, 0.12); }
+.work-thumb .sheet-thumb { height: 150px; padding: 8px; }
+.work-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.work-body h2 { display: flex; align-items: center; gap: 8px; font: 600 17px/1.3 var(--display); overflow-wrap: anywhere; }
+.work-num { display: grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--tape); font-size: 13px; }
+.work-body .muted { font-size: 14px; }
+.work-price { font: 700 20px/1.2 var(--display); margin-top: 2px; }
+.work-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 10px; }
+.work-del.is-danger { background: #C8433A; border-color: #C8433A; color: #fff; }
+.work-add { grid-template-columns: auto 1fr; align-items: center; border-style: dashed; border-width: 2px; background: transparent; min-height: 110px; }
+.work-add:hover { border-color: var(--cobalt); background: var(--paper); }
+.work-add b { display: block; font-size: 17px; }
+.work-add .muted { display: block; font-size: 14px; }
+.work-add-plus { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 14px; background: var(--tape); font: 700 30px/1 var(--display); }
+.work-add-custom .work-add-plus { background: var(--mint); }
+.co-dl dt small { display: block; font-size: 13px; color: var(--ink-2); }
+.co-dl dt { color: var(--ink); }
+.co-sheets figcaption { font-size: 12px; text-align: center; color: var(--ink-2); margin-top: 4px; }
+
 /* ---------- оформление ---------- */
 .co { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 24px; align-items: start; }
 .co-sum, .co-form { background: var(--paper); border-radius: 18px; padding: 22px; border: 1px solid var(--line); }

@@ -4,24 +4,63 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const app = $("#app");
 const uid = () => Math.random().toString(36).slice(2, 9);
 
-// ---------- состояние заказа ----------
+// ---------- «Мой набор»: несколько работ в одном заказе ----------
+// Работа — один лист (или несколько листов) одного набора: банки, Wi-Fi, щиток…
+// `order` всегда указывает на работу, открытую сейчас в конструкторе.
 const EMPTY = { cat: null, sol: null, style: "minimal", material: "standard", sheet: "A6", stickers: [] };
-let order = load();
+let works = [];
+let order = null;
 let selected = null;
 let editing = true; // открыто ли окно редактирования выбранной наклейки
 
+function normWork(w) {
+  return { ...EMPTY, ...w, id: w.id || uid(), name: w.name || "Работа", stickers: mergeDuplicates(w.stickers || []), touched: !!w.touched };
+}
 function load() {
-  let o;
-  try { o = { ...EMPTY, ...JSON.parse(localStorage.getItem("lepko-order") || "{}") }; }
-  catch { o = { ...EMPTY }; }
-  // старые заказы хранили каждую копию отдельно — объединяем в строки с количеством
-  o.stickers = mergeDuplicates(o.stickers || []);
-  return o;
+  let st = null;
+  try { st = JSON.parse(localStorage.getItem("lepko-set") || "null"); } catch {}
+  if (st && Array.isArray(st.works)) {
+    works = st.works.map(normWork);
+    order = works.find((w) => w.id === st.active) || works[works.length - 1] || null;
+    return;
+  }
+  // переход со старой версии, где хранилась одна работа
+  let old = null;
+  try { old = JSON.parse(localStorage.getItem("lepko-order") || "null"); } catch {}
+  works = old && old.stickers?.length ? [normWork({ ...old, name: workName(old), touched: true })] : [];
+  order = works[0] || null;
 }
 function save() {
-  try { localStorage.setItem("lepko-order", JSON.stringify(order)); } catch {}
+  try { localStorage.setItem("lepko-set", JSON.stringify({ works, active: order?.id || null })); } catch {}
   updateCartBadge();
 }
+
+function workName(w) {
+  const sol = findSol(findCat(w.cat), w.sol);
+  return sol ? sol.name : "Своя наклейка";
+}
+// Новая работа. Нетронутую текущую (только что открытую и не изменённую) заменяем, чтобы не копить пустые.
+function addWork(w) {
+  const fresh = normWork({ ...w, id: uid(), updated: Date.now() });
+  if (order && !order.touched) {
+    const i = works.indexOf(order);
+    if (i >= 0) works.splice(i, 1);
+  }
+  const same = works.filter((x) => x.name === fresh.name || x.name.startsWith(fresh.name + " ")).length;
+  if (same) fresh.name = `${fresh.name} ${same + 1}`;
+  works.push(fresh);
+  order = fresh;
+  selected = null; editing = true;
+  save();
+}
+function openWork(id) {
+  const w = works.find((x) => x.id === id);
+  if (!w) return false;
+  order = w; selected = null; editing = true;
+  save();
+  return true;
+}
+const usedWorks = () => works.filter((w) => w.stickers.length && w.touched);
 
 function styled(base, styleKey, i = 0) {
   const st = STYLES[styleKey];
@@ -33,15 +72,13 @@ function applyStyle(styleKey) {
   order.stickers = order.stickers.map((s, i) => styled(s, styleKey, i));
 }
 function startFromSolution(cat, sol) {
-  order = {
-    cat: cat.id, sol: sol.id, style: sol.style, material: sol.material, sheet: sol.sheet,
+  addWork({
+    cat: cat.id, sol: sol.id, name: sol.name, style: sol.style, material: sol.material, sheet: sol.sheet,
     stickers: mergeDuplicates(sol.stickers).map((s, i) => styled({ ...s, id: uid() }, sol.style, i)),
-  };
-  save();
+  });
 }
 function startCustom() {
-  order = { ...EMPTY, stickers: [styled({ id: uid(), shape: "round", w: 50, h: 24, text: "Моя наклейка", sub: "", icon: "star" }, "minimal")] };
-  save();
+  addWork({ ...EMPTY, name: "Своя наклейка", stickers: [styled({ id: uid(), shape: "round", w: 50, h: 24, text: "Моя наклейка", sub: "", icon: "star" }, "minimal")] });
 }
 
 const findCat = (id) => CATEGORIES.find((c) => c.id === id);
@@ -55,16 +92,17 @@ function header() {
       <a href="#/?to=catalog">Каталог</a>
       <a href="#/?to=how">Как это работает</a>
       <a href="#/custom">Своя наклейка</a>
-      <a href="#/editor" class="cart-link" ${order.stickers.length ? "" : "hidden"}>Мой лист <b class="cart-count">${totalQty(order.stickers)}</b></a>
+      <a href="#/set" class="cart-link" ${usedWorks().length ? "" : "hidden"}>Мой набор <b class="cart-count">${usedWorks().length}</b></a>
     </nav>
   </header>`;
 }
 function updateCartBadge() {
   const a = $(".cart-link");
   if (!a) return;
-  a.hidden = !order.stickers.length;
+  const n = usedWorks().length;
+  a.hidden = !n;
   const b = $(".cart-count", a);
-  if (b) b.textContent = totalQty(order.stickers);
+  if (b) b.textContent = n;
 }
 
 function footer() {
@@ -193,7 +231,7 @@ function viewCategory(catId) {
         <div class="sol-mini">${prev.map((x) => miniSticker(x)).join("")}</div>
         <div class="sol-foot">
           <span class="muted">${s.stickers.length} ${plural(s.stickers.length, "наклейка", "наклейки", "наклеек")} в наборе</span>
-          <a class="btn btn-primary" href="#/s/${cat.id}/${s.id}/1">Выбрать</a>
+          <a class="btn btn-primary" href="#/s/${cat.id}/${s.id}/1?new=1">Выбрать</a>
         </div>
       </div>
     </article>`;
@@ -227,10 +265,14 @@ function stepper(active, base) {
   }).join("")}</ol>`;
 }
 
-function viewStep(catId, solId, step) {
+function viewStep(catId, solId, step, query = new URLSearchParams()) {
   const cat = findCat(catId), sol = findSol(cat, solId);
   if (!sol) return notFound();
-  if (order.sol !== sol.id || order.cat !== cat.id || !order.stickers.length) startFromSolution(cat, sol);
+  // «Выбрать» в категории всегда начинает новую работу, предыдущие остаются в наборе
+  if (query.get("new") || !order || order.sol !== sol.id || order.cat !== cat.id || !order.stickers.length) {
+    startFromSolution(cat, sol);
+    if (query.get("new")) { history.replaceState(null, "", location.pathname + location.search + `#/s/${cat.id}/${sol.id}/${step | 0 || 1}`); }
+  }
   const base = `#/s/${cat.id}/${sol.id}`;
   step = Math.min(3, Math.max(1, step | 0));
 
@@ -301,7 +343,8 @@ function viewStep(catId, solId, step) {
 
 // ---------- конструктор ----------
 function viewEditor() {
-  if (!order.stickers.length) startCustom();
+  if (!order || !order.stickers.length) startCustom();
+  if (!order.touched) { order.touched = true; save(); }
   if (!order.stickers.find((s) => s.id === selected)) selected = order.stickers[0]?.id || null;
   const cat = findCat(order.cat), sol = findSol(cat, order.sol);
   const crumbs = sol
@@ -312,6 +355,16 @@ function viewEditor() {
   <main class="page editor">
     <nav class="crumbs" aria-label="Путь">${crumbs}</nav>
     ${sol ? stepper(4, `#/s/${cat.id}/${sol.id}`) : ""}
+    <div class="work-bar">
+      <label class="work-name">
+        <span class="muted">Работа ${usedWorks().indexOf(order) + 1} из ${usedWorks().length} в наборе</span>
+        <input id="workName" value="${esc(order.name)}" aria-label="Название работы" maxlength="60">
+      </label>
+      <div class="work-actions">
+        <a class="btn btn-ghost btn-sm" href="#/set">Мой набор</a>
+        <a class="btn btn-ghost btn-sm" href="#/?to=catalog">Добавить ещё работу</a>
+      </div>
+    </div>
     <div class="ed">
       <section class="ed-preview" aria-label="Превью листа">
         <div class="ed-sheet-bar">
@@ -345,7 +398,7 @@ function viewEditor() {
   </main>
   <div class="paybar">
     <div id="summary"></div>
-    <a class="btn btn-primary" href="#/order">Оформить заказ</a>
+    <a class="btn btn-primary" href="#/set">Готово, в набор</a>
   </div>`;
 
   renderSheets(); renderList(); renderProps(); renderSummary();
@@ -518,7 +571,9 @@ function renderSummary() {
   const p = priceOf(order);
   const m = MATERIALS[order.material];
   const n = totalQty(order.stickers);
-  $("#summary").innerHTML = `<b>${money(p.total)}</b><span>${p.sheets} ${plural(p.sheets, "лист", "листа", "листов")} ${order.sheet}, ${n} ${plural(n, "наклейка", "наклейки", "наклеек")}, ${m.name.toLowerCase()}</span>`;
+  const list = usedWorks();
+  const all = list.length > 1 ? `<span>Весь набор: ${money(setTotal(list))}, ${list.length} ${plural(list.length, "работа", "работы", "работ")}</span>` : "";
+  $("#summary").innerHTML = `<b>${money(p.total)}</b><span>${p.sheets} ${plural(p.sheets, "лист", "листа", "листов")} ${order.sheet}, ${n} ${plural(n, "наклейка", "наклейки", "наклеек")}, ${m.name.toLowerCase()}</span>${all}`;
 }
 
 function refresh({ list = false, props = false } = {}) {
@@ -730,8 +785,8 @@ function onEditorClick(e) {
       break;
     }
     case "del": {
+      if (order.stickers.length === 1) { toast("Это последняя наклейка. Удалить всю работу можно в «Мой набор»"); break; }
       order.stickers = order.stickers.filter((x) => x.id !== id);
-      if (!order.stickers.length) { startCustom(); }
       if (selected === id) selected = order.stickers[0].id;
       refresh({ list: true, props: true }); break;
     }
@@ -784,6 +839,7 @@ function onEditorClick(e) {
 
 function onEditorInput(e) {
   const el = e.target;
+  if (el.id === "workName") { order.name = el.value.trim() || "Работа"; save(); return; }
   const field = el.dataset.field;
   if (!field) return;
   const s = el.dataset.id ? order.stickers.find((x) => x.id === el.dataset.id) : current();
@@ -852,24 +908,110 @@ function scrollPropsOnMobile() {
 }
 
 // ---------- оформление ----------
+// ---------- мой набор ----------
+function setTotal(list) {
+  return Math.round(list.reduce((t, w) => t + priceOf(w).total, 0) * 100) / 100;
+}
+
+function workCard(w, i) {
+  const p = priceOf(w);
+  const first = pack(w.stickers, w.sheet).sheets[0];
+  const n = totalQty(w.stickers);
+  const sh = SHEETS[w.sheet];
+  return `
+  <article class="work ${w === order ? "is-active" : ""}">
+    <a class="work-thumb" href="#/w/${w.id}" aria-label="Открыть «${esc(w.name)}»">
+      <span class="sheet-thumb" style="--w:${sh.w};--h:${sh.h}">${sheetSVG(first, w.sheet)}</span>
+    </a>
+    <div class="work-body">
+      <h2><span class="work-num">${i + 1}</span>${esc(w.name)}</h2>
+      <p class="muted">${n} ${plural(n, "наклейка", "наклейки", "наклеек")}, ${p.sheets} ${plural(p.sheets, "лист", "листа", "листов")} ${w.sheet}, ${MATERIALS[w.material].name.toLowerCase()}</p>
+      <p class="work-price">${money(p.total)}</p>
+      <div class="work-btns">
+        <a class="btn btn-primary btn-sm" href="#/w/${w.id}">Изменить</a>
+        <button class="btn btn-ghost btn-sm" data-set="copy" data-id="${w.id}">Копия</button>
+        <button class="btn btn-ghost btn-sm work-del" data-set="del" data-id="${w.id}">Удалить</button>
+      </div>
+    </div>
+  </article>`;
+}
+
+function viewSet() {
+  const list = usedWorks();
+  const total = setTotal(list);
+  app.innerHTML = `${header()}
+  <main class="page set">
+    <h1 class="page-title">Мой набор</h1>
+    <p class="page-lead">${list.length
+      ? `Все ваши работы хранятся здесь, в этом браузере. Добавляйте новые и оформляйте одним заказом.`
+      : `Пока пусто. Выберите готовый набор в каталоге или сделайте свою наклейку.`}</p>
+    <div class="works">
+      ${list.map(workCard).join("")}
+      <a class="work work-add" href="#/?to=catalog">
+        <span class="work-add-plus" aria-hidden="true">+</span>
+        <span><b>Добавить работу</b><span class="muted">Наклейки на банки, Wi-Fi, щиток или что-то своё</span></span>
+      </a>
+      <a class="work work-add work-add-custom" href="#/custom">
+        <span class="work-add-plus" aria-hidden="true">+</span>
+        <span><b>Своя наклейка с нуля</b><span class="muted">Форма, размер и текст — как хотите</span></span>
+      </a>
+    </div>
+  </main>
+  ${list.length ? `<div class="paybar">
+    <div id="summary"><b>${money(total)}</b><span>${list.length} ${plural(list.length, "работа", "работы", "работ")}, ${list.reduce((t, w) => t + priceOf(w).sheets, 0)} ${plural(list.reduce((t, w) => t + priceOf(w).sheets, 0), "лист", "листа", "листов")}</span></div>
+    <a class="btn btn-primary" href="#/order">Оформить заказ</a>
+  </div>` : ""}
+  ${footer()}`;
+  document.body.classList.toggle("has-paybar", !!list.length);
+
+  app.onclick = (e) => {
+    const b = e.target.closest("[data-set]");
+    if (!b) return;
+    const w = works.find((x) => x.id === b.dataset.id);
+    if (!w) return;
+    if (b.dataset.set === "copy") {
+      const c = normWork({ ...JSON.parse(JSON.stringify(w)), id: uid(), name: w.name + " (копия)", touched: true });
+      c.stickers = c.stickers.map((s) => ({ ...s, id: uid() }));
+      works.splice(works.indexOf(w) + 1, 0, c);
+      save(); toast("Копия добавлена"); viewSet();
+    }
+    if (b.dataset.set === "del") {
+      if (b.dataset.confirm !== "1") {
+        b.dataset.confirm = "1"; b.textContent = "Точно удалить?"; b.classList.add("is-danger");
+        setTimeout(() => { if (b.isConnected) { b.dataset.confirm = ""; b.textContent = "Удалить"; b.classList.remove("is-danger"); } }, 3000);
+        return;
+      }
+      works = works.filter((x) => x !== w);
+      if (order === w) order = usedWorks()[usedWorks().length - 1] || null;
+      save(); toast(`«${w.name}» удалена`); viewSet();
+    }
+  };
+}
+
+// ---------- оформление ----------
 function viewOrder() {
-  if (!order.stickers.length) { location.hash = "#/"; return; }
-  const p = priceOf(order);
-  const { sheets } = pack(order.stickers, order.sheet);
+  const list = usedWorks();
+  if (!list.length) { location.hash = "#/set"; return; }
+  const total = setTotal(list);
+  const rows = list.map((w) => {
+    const p = priceOf(w);
+    const n = totalQty(w.stickers);
+    return `<div><dt>${esc(w.name)}<small>${n} шт., ${p.sheets} × ${w.sheet}, ${MATERIALS[w.material].name.toLowerCase()}</small></dt><dd>${money(p.total)}</dd></div>`;
+  }).join("");
+  const thumbs = list.flatMap((w) => pack(w.stickers, w.sheet).sheets.map((s) =>
+    `<figure class="sheet sheet-sm" style="--w:${SHEETS[w.sheet].w};--h:${SHEETS[w.sheet].h}">${sheetSVG(s, w.sheet)}<figcaption>${esc(w.name)}</figcaption></figure>`)).join("");
   app.innerHTML = `${header()}
   <main class="page checkout">
-    <nav class="crumbs" aria-label="Путь"><a href="#/editor">Конструктор</a><span>/</span><span>Оформление</span></nav>
+    <nav class="crumbs" aria-label="Путь"><a href="#/set">Мой набор</a><span>/</span><span>Оформление</span></nav>
     <h1 class="page-title">Оформление заказа</h1>
     <div class="co">
       <section class="co-sum" aria-label="Ваш заказ">
-        <div class="co-sheets">${sheets.map((s) => `<figure class="sheet sheet-sm" style="--w:${SHEETS[order.sheet].w};--h:${SHEETS[order.sheet].h}">${sheetSVG(s, order.sheet)}</figure>`).join("")}</div>
+        <div class="co-sheets">${thumbs}</div>
         <dl class="co-dl">
-          <div><dt>Наклейки</dt><dd>${totalQty(order.stickers)} шт.${order.stickers.length > 1 ? `, ${order.stickers.length} ${plural(order.stickers.length, "вид", "вида", "видов")}` : ""}</dd></div>
-          <div><dt>Листы</dt><dd>${p.sheets} × ${order.sheet}, по ${money(p.each)}</dd></div>
-          <div><dt>Материал</dt><dd>${MATERIALS[order.material].name}</dd></div>
-          <div class="co-total"><dt>Итого</dt><dd>${money(p.total)}</dd></div>
+          ${rows}
+          <div class="co-total"><dt>Итого</dt><dd>${money(total)}</dd></div>
         </dl>
-        <a class="btn btn-ghost btn-sm" href="#/editor">Вернуться и поправить</a>
+        <a class="btn btn-ghost btn-sm" href="#/set">Вернуться к набору</a>
       </section>
       <form class="co-form" id="coForm" novalidate>
         <label class="field">Имя и фамилия<input name="name" autocomplete="name" required></label>
@@ -884,7 +1026,7 @@ function viewOrder() {
           <label class="radio"><input type="radio" name="pay" value="cod" checked> Наложенным платежом при получении</label>
           <label class="radio"><input type="radio" name="pay" value="card"> Картой на сайте</label>
         </fieldset>
-        <button class="btn btn-primary btn-wide" type="submit">Отправить заказ на ${money(p.total)}</button>
+        <button class="btn btn-primary btn-wide" type="submit">Отправить заказ на ${money(total)}</button>
         <p class="muted" id="coMsg" role="status"></p>
       </form>
     </div>
@@ -920,12 +1062,14 @@ function route(keepScroll = false) {
   const parts = path.split("/").filter(Boolean);
   app.onclick = null; app.oninput = null; app.onchange = null;
   if (viewerOpen()) $("#viewer").close();
-  document.body.classList.toggle("has-paybar", parts[0] === "editor" || parts[0] === "custom");
+  document.body.classList.toggle("has-paybar", parts[0] === "editor" || parts[0] === "custom" || parts[0] === "set");
 
   if (keepScroll) query.delete("to");
   if (!parts.length) viewHome(query);
   else if (parts[0] === "c") viewCategory(parts[1]);
-  else if (parts[0] === "s") viewStep(parts[1], parts[2], +parts[3] || 1);
+  else if (parts[0] === "s") viewStep(parts[1], parts[2], +parts[3] || 1, query);
+  else if (parts[0] === "set") viewSet();
+  else if (parts[0] === "w") { if (openWork(parts[1])) location.replace("#/editor"); else location.replace("#/set"); return; }
   else if (parts[0] === "editor") viewEditor();
   else if (parts[0] === "custom") { startCustom(); location.replace("#/editor"); return; }
   else if (parts[0] === "order") viewOrder();
@@ -936,6 +1080,7 @@ function route(keepScroll = false) {
   else if (!query.get("to")) window.scrollTo(0, 0);
 }
 
+load();
 window.addEventListener("hashchange", route);
 route();
 // Перерисовать, когда загрузятся шрифты: от них зависит подбор кегля
