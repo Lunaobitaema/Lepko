@@ -8,6 +8,7 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 const EMPTY = { cat: null, sol: null, style: "minimal", material: "standard", sheet: "A6", stickers: [] };
 let order = load();
 let selected = null;
+let editing = true; // открыто ли окно редактирования выбранной наклейки
 
 function load() {
   let o;
@@ -360,10 +361,39 @@ function renderSheets() {
   const warn = p.tooBig.length ? `<p class="warn">${p.tooBig.length} ${plural(p.tooBig.length, "наклейка больше", "наклейки больше", "наклеек больше")} листа ${sh.label}. Уменьшите размер или выберите лист побольше.</p>` : "";
   $("#sheets").innerHTML = warn + p.sheets.map((s, i) => `
     <figure class="sheet" style="--w:${sh.w};--h:${sh.h}">
-      ${sheetSVG(s, order.sheet, { selected })}
+      ${sheetSVG(s, order.sheet, { selected: editing ? selected : null })}
       <figcaption>Лист ${i + 1} из ${p.sheets.length}, ${sh.label}</figcaption>
     </figure>`).join("");
+  renderFocus();
 }
+
+// Закреплённое окошко с редактируемой наклейкой: всегда видно под шапкой,
+// пока прокручиваешь настройки. Отсюда же — масштаб с линейками и закрытие.
+function renderFocus() {
+  const box = $("#focus");
+  const s = current();
+  if (!box || !s) return;
+  const pad = 1.2;
+  const L = stickerLayout(s);
+  box.innerHTML = `
+    <div class="focus-art">
+      <svg viewBox="${-pad} ${-pad} ${s.w + pad * 2} ${s.h + pad * 2}" style="aspect-ratio:${s.w + pad * 2}/${s.h + pad * 2}" role="img" aria-label="Наклейка «${esc(s.text)}»">${stickerSVG({ ...s, id: "focus" }, 0, 0)}</svg>
+    </div>
+    <div class="focus-meta">
+      <span class="focus-title">${esc(s.text || "Без текста")}</span>
+      <span class="muted">${s.w}×${s.h} мм, ${qtyOf(s)} шт.${L.main ? `, текст ${L.main.toFixed(1).replace(".", ",")} мм` : ""}</span>
+    </div>
+    <div class="focus-actions">
+      <button class="vw-btn" data-act="view" title="Натуральная величина с линейками">${iconSVG("ruler", 20)}<span>Масштаб</span></button>
+      <button class="vw-btn vw-close" data-act="close-edit" aria-label="Закрыть редактирование" title="Готово, закрыть">${iconSVG("close", 22)}</button>
+    </div>`;
+}
+
+function setTopHeight() {
+  const h = $(".top")?.offsetHeight || 0;
+  document.documentElement.style.setProperty("--top-h", h + "px");
+}
+window.addEventListener("resize", setTopHeight);
 
 const QTY_MAX = 999;
 const svgMinus = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>`;
@@ -411,13 +441,17 @@ const SIZE_PRESETS = [[24, 24, "24×24"], [36, 12, "36×12"], [40, 22, "40×22"]
 function renderProps() {
   const s = order.stickers.find((x) => x.id === selected);
   const box = $("#props");
-  if (!s) { box.innerHTML = `<p class="muted">Выберите наклейку на листе или в списке.</p>`; return; }
+  box.classList.toggle("is-closed", !s || !editing);
+  if (!s || !editing) {
+    box.innerHTML = `<p class="props-empty">${iconSVG("pencil", 22)}<span>Нажмите на наклейку на листе или в списке, чтобы изменить её.</span></p>`;
+    return;
+  }
   const shapeBtn = ([k, n]) => {
     const demo = { ...s, shape: k, w: k === "circle" ? 18 : 26, h: 18, text: "", sub: "", icon: null, id: "sh" };
     return `<button class="shape ${s.shape === k ? "is-on" : ""}" data-act="shape" data-v="${k}" aria-label="${n}" title="${n}"><svg viewBox="-1 -1 ${demo.w + 2} 20" width="40" height="28" aria-hidden="true"><g fill="${s.bg}" stroke="#1C2340" stroke-width=".8">${shapePath(demo, 0, 0)}</g></svg></button>`;
   };
   box.innerHTML = `
-    <div class="pb-head"><h2>Эта наклейка</h2></div>
+    <div class="focus" id="focus"></div>
     <label class="field">Текст<input data-field="text" value="${esc(s.text)}"></label>
     <label class="field">Вторая строка <span class="muted">необязательно</span><input data-field="sub" value="${esc(s.sub)}" placeholder="Дата, имя, класс"></label>
 
@@ -436,9 +470,6 @@ function renderProps() {
       <input type="range" id="fs" data-field="fs" step="0.1">
       <div class="fs-scale muted"><span>мельче</span><span>крупнее</span></div>
     </div>
-
-    <button class="btn btn-ghost btn-sm btn-view" data-act="view">${iconSVG("search", 18)} Посмотреть в натуральную величину</button>
-
     <fieldset class="field"><legend>Форма</legend><div class="shapes">${SHAPES.map(shapeBtn).join("")}</div></fieldset>
 
     <fieldset class="field"><legend>Размер, мм</legend>
@@ -464,6 +495,7 @@ function renderProps() {
     </label>
     <button class="btn btn-ghost btn-sm" data-act="apply-all">Применить форму, размер и цвета ко всем</button>`;
   syncFontSlider();
+  renderFocus();
 }
 
 // Ползунок кегля: пределы зависят от размера наклейки и длины текста
@@ -668,7 +700,7 @@ function current() { return order.stickers.find((x) => x.id === selected); }
 
 function onEditorClick(e) {
   const stk = e.target.closest(".sheets .stk");
-  if (stk) { selected = stk.dataset.id; refresh({ list: true, props: true }); openViewer(); return; }
+  if (stk) { startEditing(stk.dataset.id); return; }
 
   const sb = e.target.closest("[data-sheet]");
   if (sb) { order.sheet = sb.dataset.sheet; app.querySelectorAll("[data-sheet]").forEach((b) => b.classList.toggle("is-on", b === sb)); refresh(); return; }
@@ -678,8 +710,16 @@ function onEditorClick(e) {
   const s = current();
   const id = b.dataset.id;
   switch (b.dataset.act) {
-    case "select": selected = id; refresh({ list: true, props: true }); scrollPropsOnMobile(); break;
+    case "select": startEditing(id); break;
     case "view": openViewer(); break;
+    case "close-edit": {
+      editing = false;
+      refresh({ list: true, props: true });
+      // вернуть взгляд к листу, чтобы увидеть результат
+      const top = $("#sheets").getBoundingClientRect().top + window.scrollY - (($(".top")?.offsetHeight) || 0) - 60;
+      if ($("#sheets").getBoundingClientRect().top < 0) window.scrollTo({ top, behavior: "smooth" });
+      break;
+    }
     case "fs-auto": delete s.fs; refresh({ props: true }); break;
     case "qty+":
     case "qty-": {
@@ -698,7 +738,7 @@ function onEditorClick(e) {
     case "add": {
       const base = s || order.stickers[order.stickers.length - 1];
       const n = { ...base, id: uid(), text: "Новая", sub: "", qty: 1 };
-      order.stickers.push(n); selected = n.id;
+      order.stickers.push(n); selected = n.id; editing = true;
       refresh({ list: true, props: true });
       requestAnimationFrame(() => $(`#list [data-id="${n.id}"].s-text`)?.select());
       break;
@@ -794,8 +834,21 @@ function onEditorChange(e) {
   if (e.target.dataset.field === "w" || e.target.dataset.field === "h" || e.target.dataset.field === "font") refresh({ list: true, props: true });
 }
 
+// Выбрать наклейку и открыть окошко редактирования
+function startEditing(id) {
+  const wasOpen = editing && selected === id;
+  selected = id; editing = true;
+  refresh({ list: true, props: true });
+  if (!wasOpen) scrollPropsOnMobile();
+}
+
+// На телефоне настройки ниже листа — прокручиваем так, чтобы окошко встало под шапку
 function scrollPropsOnMobile() {
-  if (window.matchMedia("(max-width: 900px)").matches) $("#props")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  const box = $("#props");
+  if (!box) return;
+  const top = box.getBoundingClientRect().top + window.scrollY - (($(".top")?.offsetHeight) || 0) - 8;
+  window.scrollTo({ top, behavior: "smooth" });
 }
 
 // ---------- оформление ----------
@@ -877,6 +930,7 @@ function route(keepScroll = false) {
   else if (parts[0] === "custom") { startCustom(); location.replace("#/editor"); return; }
   else if (parts[0] === "order") viewOrder();
   else notFound();
+  setTopHeight();
 
   if (keepScroll) window.scrollTo(0, y);
   else if (!query.get("to")) window.scrollTo(0, 0);

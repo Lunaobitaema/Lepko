@@ -305,6 +305,29 @@ p { margin: 0; }
 .paybar #summary b { font: 700 22px/1.2 var(--display); }
 .paybar #summary span { font-size: 13px; color: var(--ink-2); }
 
+/* ---------- закреплённое окошко редактируемой наклейки ---------- */
+.focus {
+  position: sticky; top: calc(var(--top-h, 64px) + 8px); z-index: 12;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "art actions" "meta meta";
+  gap: 8px 12px; align-items: center;
+  margin: -6px -6px 18px; padding: 12px;
+  background: #E4E8EF; border-radius: 14px;
+  box-shadow: 0 0 0 6px var(--paper), 0 10px 18px -8px rgba(28, 35, 64, 0.35);
+}
+.focus-art { grid-area: art; display: flex; align-items: center; min-height: 64px; }
+.focus-art svg { display: block; height: auto; max-height: 96px; max-width: 100%; width: auto; overflow: visible; }
+.focus-art .stk { cursor: default; }
+.focus-art .stk-cut { stroke-width: 0.25; }
+.focus-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
+.focus-title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.focus-meta .muted { font-size: 13px; }
+.focus-actions { grid-area: actions; display: flex; flex-direction: column; gap: 6px; align-self: start; }
+.focus-actions .vw-btn { min-height: 40px; font-size: 14px; padding: 0 12px; }
+.focus-actions .vw-close { background: var(--paper); border-color: var(--line); }
+#props.is-closed { padding: 14px 18px; }
+.props-empty { display: flex; align-items: center; gap: 10px; color: var(--ink-2); font-size: 15px; }
+.props-empty .ico { flex: none; color: var(--cobalt); }
+
 /* ---------- размер текста ---------- */
 .fs-head { display: flex; align-items: baseline; gap: 10px; }
 .fs-val { font-weight: 500; color: var(--ink-2); }
