@@ -48,7 +48,22 @@ const STYLES = {
   bright: { name: "Яркий рабочий", bg: "#FFD447", fg: "#1C2340", font: "Unbounded", weight: 600 },
 };
 
-const FONTS = ["Onest", "Unbounded", "Comfortaa", "Caveat", "PT Serif"];
+// Шрифты с кириллицей (русский, украинский, болгарский). weight — начертание на наклейке.
+const FONT_INFO = {
+  "Onest": { label: "Простой", weight: 600 },
+  "Montserrat": { label: "Чёткий", weight: 700 },
+  "Rubik": { label: "Мягкий", weight: 600 },
+  "Unbounded": { label: "Широкий", weight: 600 },
+  "Russo One": { label: "Технический", weight: 400 },
+  "Comfortaa": { label: "Круглый", weight: 700 },
+  "PT Serif": { label: "Книжный", weight: 700 },
+  "Roboto Slab": { label: "Брусковый", weight: 700 },
+  "Lobster": { label: "Вывеска", weight: 400 },
+  "Caveat": { label: "Рукописный", weight: 700 },
+  "Neucha": { label: "От руки", weight: 400 },
+  "Marck Script": { label: "Каллиграфия", weight: 400 },
+};
+const FONTS = Object.keys(FONT_INFO);
 
 const SWATCHES = ["#FFFFFF", "#F3F1E8", "#CDAA7D", "#FFD447", "#FFD9CF", "#CDE8FF", "#D8F2D0", "#E9DDFF", "#2F5BD3", "#2D3331", "#1C2340", "#C8433A"];
 

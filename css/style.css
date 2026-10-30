@@ -516,3 +516,18 @@ body.no-scroll { overflow: hidden; }
 .lab-info .muted { font-size: 14px; }
 .lab-info .btn { align-self: flex-start; }
 @media (max-width: 600px) { .lab-card { grid-template-columns: 1fr; } }
+
+/* ---------- оптимизация раскладки ---------- */
+.opt { display: flex; align-items: center; gap: 8px; }
+.opt-label { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.seg-opt button { min-width: 52px; }
+.opt-hint { font-size: 13px; color: var(--ink-2); margin: -4px 0 12px; }
+.opt-hint .link-btn { margin-left: 4px; font-size: 13px; }
+
+/* ---------- выбор шрифта ---------- */
+.fonts { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+.font-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; padding: 8px 10px; border: 2px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); cursor: pointer; text-align: left; }
+.font-pick:hover { border-color: var(--ink-2); }
+.font-pick.is-on { border-color: var(--cobalt); background: #F1F4FD; }
+.font-sample { font-size: 19px; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.font-name { font-size: 12px; color: var(--ink-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

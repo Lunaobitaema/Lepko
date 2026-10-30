@@ -17,7 +17,7 @@ function fitSize(text, font, weight, maxW, maxH) {
   return Math.max(1.2, Math.min(maxH, maxW / k));
 }
 
-const FALLBACK = { "PT Serif": "Georgia, serif", Caveat: "cursive", Comfortaa: "sans-serif", Unbounded: "sans-serif", Onest: "sans-serif" };
+const FALLBACK = { "PT Serif": "Georgia, serif", "Roboto Slab": "Georgia, serif", Caveat: "cursive", Neucha: "cursive", "Marck Script": "cursive", Lobster: "cursive" };
 const fontStack = (f) => `'${f}', ${FALLBACK[f] || "sans-serif"}`;
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -151,20 +151,26 @@ function mergeDuplicates(stickers) {
   return out;
 }
 
-// Раскладка по полкам, по порядку; когда лист заполнен — следующий лист.
-// Каждая наклейка ставится столько раз, сколько указано в qty.
-function pack(stickers, sheetKey) {
+// ---------- Раскладка на листе ----------
+// Уровень оптимизации:
+//   0   — строго по порядку списка, рядами (как набрано);
+//   50  — удобная: одинаковые и близкие по высоте наклейки рядом, ровными рядами;
+//   100 — максимальная: каждая наклейка ищет любое свободное место, пробуем несколько
+//         стратегий и берём ту, что даёт меньше листов.
+const OPT_LEVELS = [0, 50, 100];
+
+function packArea(sheetKey) {
   const sh = SHEETS[sheetKey];
-  const W = sh.w - SHEET_MARGIN * 2, H = sh.h - SHEET_MARGIN * 2;
+  return { W: sh.w - SHEET_MARGIN * 2, H: sh.h - SHEET_MARGIN * 2 };
+}
+
+// Ряды (полки): каждая наклейка встаёт в первый ряд, куда влезает, иначе открывает новый
+function shelfPack(copies, W, H) {
   const sheets = [];
-  const tooBig = new Set();
   let cur = null;
   const newSheet = () => { cur = { shelves: [], items: [], usedH: 0 }; sheets.push(cur); };
   newSheet();
-
-  const copies = stickers.flatMap((s) => Array(qtyOf(s)).fill(s));
   for (const s of copies) {
-    if (s.w > W || s.h > H) { tooBig.add(s.id); continue; }
     let placed = false;
     for (const shelf of cur.shelves) {
       if (s.h <= shelf.h && shelf.x + s.w <= W) {
@@ -173,21 +179,100 @@ function pack(stickers, sheetKey) {
       }
     }
     if (placed) continue;
+    if ((cur.usedH ? cur.usedH + GAP : 0) + s.h > H) newSheet();
     const y = cur.usedH ? cur.usedH + GAP : 0;
-    if (y + s.h > H) { newSheet(); }
-    const yy = cur.usedH ? cur.usedH + GAP : 0;
-    const shelf = { y: yy, h: s.h, x: s.w + GAP };
-    cur.shelves.push(shelf);
-    cur.usedH = yy + s.h;
-    cur.items.push({ s, x: 0, y: yy });
+    cur.shelves.push({ y, h: s.h, x: s.w + GAP });
+    cur.usedH = y + s.h;
+    cur.items.push({ s, x: 0, y });
   }
-  if (sheets.length > 1 && !sheets[sheets.length - 1].items.length) sheets.pop();
+  return sheets;
+}
+
+// Свободные прямоугольники (MaxRects). Зазор учитываем, увеличивая каждую наклейку и лист на GAP.
+function maxRectsPack(copies, W, H, rule) {
+  const BW = W + GAP, BH = H + GAP;
+  const sheets = [];
+  let left = copies.slice();
+  while (left.length) {
+    let free = [{ x: 0, y: 0, w: BW, h: BH }];
+    const items = [], rest = [];
+    for (const s of left) {
+      const w = s.w + GAP, h = s.h + GAP;
+      let best = null, bs1 = Infinity, bs2 = Infinity;
+      for (const f of free) {
+        if (w > f.w + 1e-6 || h > f.h + 1e-6) continue;
+        let a, b;
+        if (rule === "bl") { a = f.y + h; b = f.x; }                              // снизу-слева: плотнее к верху листа
+        else { const dw = f.w - w, dh = f.h - h; a = Math.min(dw, dh); b = Math.max(dw, dh); } // лучшая короткая сторона
+        if (a < bs1 - 1e-6 || (Math.abs(a - bs1) < 1e-6 && b < bs2)) { bs1 = a; bs2 = b; best = { x: f.x, y: f.y }; }
+      }
+      if (!best) { rest.push(s); continue; }
+      const r = { x: best.x, y: best.y, w, h };
+      items.push({ s, x: r.x, y: r.y });
+      // разрезать все свободные области, которые пересекает новая наклейка
+      const next = [];
+      for (const f of free) {
+        if (r.x >= f.x + f.w || r.x + r.w <= f.x || r.y >= f.y + f.h || r.y + r.h <= f.y) { next.push(f); continue; }
+        if (r.x > f.x) next.push({ x: f.x, y: f.y, w: r.x - f.x, h: f.h });
+        if (r.x + r.w < f.x + f.w) next.push({ x: r.x + r.w, y: f.y, w: f.x + f.w - r.x - r.w, h: f.h });
+        if (r.y > f.y) next.push({ x: f.x, y: f.y, w: f.w, h: r.y - f.y });
+        if (r.y + r.h < f.y + f.h) next.push({ x: f.x, y: r.y + r.h, w: f.w, h: f.y + f.h - r.y - r.h });
+      }
+      // убрать области, целиком лежащие внутри других
+      free = next.filter((a, i) => !next.some((b, j) => j !== i &&
+        a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h && (j < i || a.w !== b.w || a.h !== b.h || a.x !== b.x || a.y !== b.y)));
+    }
+    if (!items.length) break; // защита: ничего не влезло
+    sheets.push({ items });
+    left = rest;
+  }
+  return sheets;
+}
+
+const usedHeight = (sheet) => sheet.items.reduce((m, it) => Math.max(m, it.y + it.s.h), 0);
+
+function pack(stickers, sheetKey, opt = 0) {
+  const { W, H } = packArea(sheetKey);
+  const tooBig = new Set();
+  const order = new Map(stickers.map((s, i) => [s.id, i]));
+  const copies = [];
+  for (const s of stickers) {
+    if (s.w > W || s.h > H) { tooBig.add(s.id); continue; }
+    for (let k = 0; k < qtyOf(s); k++) copies.push(s);
+  }
+  let sheets;
+  if (opt >= 100) {
+    // несколько порядков и два правила — берём лучший результат
+    const by = (f) => copies.slice().sort((a, b) => f(b) - f(a) || order.get(a.id) - order.get(b.id));
+    const orders = [by((s) => s.w * s.h), by((s) => s.h * 1000 + s.w), by((s) => s.w * 1000 + s.h), by((s) => Math.max(s.w, s.h))];
+    let best = null, bestKey = null;
+    for (const o of orders) for (const rule of ["bssf", "bl"]) {
+      const r = maxRectsPack(o, W, H, rule);
+      const key = [r.length, usedHeight(r[r.length - 1] || { items: [] })];
+      if (!best || key[0] < bestKey[0] || (key[0] === bestKey[0] && key[1] < bestKey[1])) { best = r; bestKey = key; }
+    }
+    // ряды с сортировкой иногда не хуже — тогда берём их, они аккуратнее
+    const rows = shelfPack(by((s) => s.h * 1000 + s.w), W, H);
+    const rowsKey = [rows.length, usedHeight(rows[rows.length - 1])];
+    if (!best || rowsKey[0] < bestKey[0] || (rowsKey[0] === bestKey[0] && rowsKey[1] <= bestKey[1])) best = rows;
+    sheets = best;
+  } else if (opt >= 50) {
+    // удобная: по высоте, внутри одинаковые наклейки подряд, ровные ряды
+    const sorted = copies.slice().sort((a, b) => b.h - a.h || b.w - a.w || order.get(a.id) - order.get(b.id));
+    sheets = shelfPack(sorted, W, H);
+  } else {
+    sheets = shelfPack(copies, W, H);
+  }
+  if (!sheets.length) sheets = [{ items: [] }];
   return { sheets, tooBig: [...tooBig], W, H };
 }
 
+const workOpt = (w) => (w && OPT_LEVELS.includes(w.opt) ? w.opt : 50);
+const packWork = (w) => pack(w.stickers, w.sheet, workOpt(w));
+
 // Сколько ещё копий наклейки s влезет, не добавляя новый лист
-function spaceLeftFor(s, stickers, sheetKey) {
-  const base = pack(stickers, sheetKey).sheets.length;
+function spaceLeftFor(s, stickers, sheetKey, opt = 0) {
+  const base = pack(stickers, sheetKey, opt).sheets.length;
   const probe = stickers.map((x) => ({ ...x }));
   let target = probe.find((x) => x.id === s.id);
   if (!target) { target = { ...s, qty: 0 }; probe.push(target); }
@@ -195,7 +280,7 @@ function spaceLeftFor(s, stickers, sheetKey) {
   let n = 0;
   while (n < 500) {
     target.qty = start + n + 1;
-    if (pack(probe, sheetKey).sheets.length > base) break;
+    if (pack(probe, sheetKey, opt).sheets.length > base) break;
     n++;
   }
   return n;
@@ -214,7 +299,7 @@ function sheetSVG(sheet, sheetKey, opts = {}) {
 }
 
 function priceOf(order) {
-  const { sheets } = pack(order.stickers, order.sheet);
+  const { sheets } = packWork(order);
   const n = Math.max(1, sheets.length);
   const each = SHEETS[order.sheet].price * (1 + (MATERIALS[order.material]?.extra || 0));
   return { sheets: n, each, total: Math.round(n * each * 100) / 100 };

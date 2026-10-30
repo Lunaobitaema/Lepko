@@ -14,7 +14,7 @@ let selected = null;
 let editing = true; // открыто ли окно редактирования выбранной наклейки
 
 function normWork(w) {
-  return { ...EMPTY, ...w, material: "standard", id: w.id || uid(), name: w.name || "Работа", stickers: mergeDuplicates(w.stickers || []), touched: !!w.touched };
+  return { ...EMPTY, opt: 50, ...w, material: "standard", id: w.id || uid(), name: w.name || "Работа", stickers: mergeDuplicates(w.stickers || []), touched: !!w.touched };
 }
 function load() {
   let st = null;
@@ -65,7 +65,7 @@ const usedWorks = () => works.filter((w) => w.stickers.length && w.touched);
 function styled(base, styleKey, i = 0) {
   const st = STYLES[styleKey];
   const bg = st.cycle ? st.cycle[i % st.cycle.length] : st.bg;
-  return { ...base, bg, fg: st.fg, font: st.font, weight: st.weight };
+  return { ...base, bg, fg: st.fg, font: st.font, weight: FONT_INFO[st.font]?.weight || st.weight };
 }
 function applyStyle(styleKey) {
   order.style = styleKey;
@@ -254,7 +254,7 @@ function miniSticker(s) {
 }
 
 // ---------- шаги выбора ----------
-const STEP_NAMES = ["Стиль", "Размер листа", "Свои слова"];
+const STEP_NAMES = ["Стиль", "Свои слова"];
 const LAST_STEP = STEP_NAMES.length - 1; // последний шаг мастера, дальше конструктор
 
 function stepper(active, base) {
@@ -288,20 +288,6 @@ function viewStep(catId, solId, step, query = new URLSearchParams()) {
         <span class="choice-name">${st.name}</span>
       </button>`;
     }).join("")}</div>`;
-  } else {
-    title = "Какой размер листа?";
-    body = `<div class="choices choices-sheet">${Object.entries(SHEETS).map(([k, sh]) => {
-      const p = pack(order.stickers, k);
-      const n = p.sheets.length;
-      const fits = p.tooBig.length ? "наклейки крупнее листа" : n === 1 ? "весь набор на одном листе" : `набор займёт ${n} ${plural(n, "лист", "листа", "листов")}`;
-      const price = priceOf({ ...order, sheet: k });
-      return `<button class="choice choice-sheet ${order.sheet === k ? "is-on" : ""}" data-act="sheet" data-v="${k}">
-        <span class="sheet-thumb" style="--w:${sh.w};--h:${sh.h}">${sheetSVG(p.sheets[0], k)}</span>
-        <span class="choice-name">${sh.label} <small>${sh.w}×${sh.h} мм, ${sh.hint}</small></span>
-        <span class="choice-text">${fits}</span>
-        <span class="choice-price">${money(price.total)}</span>
-      </button>`;
-    }).join("")}</div>`;
   }
 
   app.innerHTML = `${header()}
@@ -328,7 +314,6 @@ function viewStep(catId, solId, step, query = new URLSearchParams()) {
     if (!b) return;
     const v = b.dataset.v;
     if (b.dataset.act === "style") applyStyle(v);
-    if (b.dataset.act === "sheet") order.sheet = v;
     save();
     location.hash = step === LAST_STEP ? "#/editor" : `${base}/${step + 1}`;
   };
@@ -362,7 +347,12 @@ function viewEditor() {
       <section class="ed-preview" aria-label="Превью листа">
         <div class="ed-sheet-bar">
           <div class="seg" role="group" aria-label="Размер листа">${Object.keys(SHEETS).map((k) => `<button data-sheet="${k}" class="${order.sheet === k ? "is-on" : ""}">${k}</button>`).join("")}</div>
+          <div class="opt" role="group" aria-label="Оптимизация раскладки">
+            <span class="opt-label">${iconSVG("box", 18)} Раскладка</span>
+            <div class="seg seg-opt">${OPT_LEVELS.map((v) => `<button data-opt="${v}" class="${workOpt(order) === v ? "is-on" : ""}" title="${OPT_HINT[v]}">${v}%</button>`).join("")}</div>
+          </div>
         </div>
+        <p class="opt-hint" id="optHint"></p>
         <div id="sheets" class="sheets"></div>
         <p class="ed-hint">Нажмите на наклейку, чтобы изменить её. Пунктир — линия реза.</p>
       </section>
@@ -400,8 +390,21 @@ function viewEditor() {
   app.ontouchend = onFocusTouchEnd;
 }
 
+const OPT_HINT = {
+  0: "По порядку списка",
+  50: "Удобно: одинаковые наклейки рядом, ровными рядами",
+  100: "Максимально плотно: меньше листов",
+};
+
 function renderSheets() {
-  const p = pack(order.stickers, order.sheet);
+  const p = packWork(order);
+  const hint = $("#optHint");
+  if (hint) {
+    const opt = workOpt(order);
+    const best = opt < 100 ? pack(order.stickers, order.sheet, 100).sheets.length : p.sheets.length;
+    const save = p.sheets.length - best;
+    hint.innerHTML = `${OPT_HINT[opt]}.` + (save > 0 ? ` <button class="link-btn" data-opt="100">При 100% — ${best} ${plural(best, "лист", "листа", "листов")} вместо ${p.sheets.length}</button>` : "");
+  }
   const sh = SHEETS[order.sheet];
   const warn = p.tooBig.length ? `<p class="warn">${p.tooBig.length} ${plural(p.tooBig.length, "наклейка больше", "наклейки больше", "наклеек больше")} листа ${sh.label}. Уменьшите размер или выберите лист побольше.</p>` : "";
   $("#sheets").innerHTML = warn + p.sheets.map((s, i) => `
@@ -574,9 +577,12 @@ function renderProps() {
     <fieldset class="field"><legend>Фон</legend><div class="swatches">${SWATCHES.map((c) => `<button class="sw ${s.bg === c ? "is-on" : ""}" style="--c:${c}" data-act="bg" data-v="${c}" aria-label="Фон ${c}"></button>`).join("")}</div></fieldset>
     <fieldset class="field"><legend>Цвет текста</legend><div class="swatches">${["#1C2340", "#FFFFFF", "#F3F1E8", "#3B2A17", "#2F5BD3", "#C8433A"].map((c) => `<button class="sw ${s.fg === c ? "is-on" : ""}" style="--c:${c}" data-act="fg" data-v="${c}" aria-label="Текст ${c}"></button>`).join("")}</div></fieldset>
 
-    <label class="field">Шрифт
-      <select data-field="font">${FONTS.map((f) => `<option ${s.font === f ? "selected" : ""} style="font-family:'${f}'">${f}</option>`).join("")}</select>
-    </label>
+    <fieldset class="field"><legend>Шрифт</legend>
+      <div class="fonts">${FONTS.map((f) => `<button class="font-pick ${s.font === f ? "is-on" : ""}" data-act="font" data-v="${esc(f)}" style="font-family:${esc(fontStack(f))};font-weight:${FONT_INFO[f].weight}" aria-label="Шрифт ${esc(f)}, ${FONT_INFO[f].label.toLowerCase()}">
+        <span class="font-sample">${esc((s.text || "Наклейка").slice(0, 14))}</span>
+        <span class="font-name">${esc(f)} · ${FONT_INFO[f].label}</span>
+      </button>`).join("")}</div>
+    </fieldset>
     <button class="btn btn-ghost btn-sm" data-act="apply-all">Применить форму, размер и цвета ко всем</button>`;
   syncFontSlider();
   renderFocus();
@@ -787,6 +793,12 @@ function onEditorClick(e) {
   const stk = e.target.closest(".sheets .stk");
   if (stk) { startEditing(stk.dataset.id); return; }
 
+  const ob = e.target.closest("[data-opt]");
+  if (ob) {
+    order.opt = +ob.dataset.opt;
+    app.querySelectorAll(".seg-opt [data-opt]").forEach((b) => b.classList.toggle("is-on", +b.dataset.opt === order.opt));
+    refresh(); return;
+  }
   const sb = e.target.closest("[data-sheet]");
   if (sb) { order.sheet = sb.dataset.sheet; app.querySelectorAll("[data-sheet]").forEach((b) => b.classList.toggle("is-on", b === sb)); refresh(); return; }
 
@@ -832,7 +844,7 @@ function onEditorClick(e) {
     }
     case "fill": {
       const base = s || order.stickers[0];
-      const k = spaceLeftFor(base, order.stickers, order.sheet);
+      const k = spaceLeftFor(base, order.stickers, order.sheet, workOpt(order));
       base.qty = qtyOf(base) + k;
       toast(k ? `«${base.text}»: +${k} шт., теперь ${base.qty}` : "На последнем листе нет места для этой наклейки");
       refresh({ list: true, props: true }); break;
@@ -858,6 +870,7 @@ function onEditorClick(e) {
       s.w = +b.dataset.w; s.h = +b.dataset.h;
       if (s.shape === "circle") s.h = s.w;
       refresh({ list: true, props: true }); break;
+    case "font": s.font = b.dataset.v; s.weight = FONT_INFO[s.font]?.weight || 600; refresh({ list: true, props: true }); break;
     case "icon": s.icon = b.dataset.v || null; refresh({ list: true, props: true }); break;
     case "bg": s.bg = b.dataset.v; refresh({ list: true, props: true }); break;
     case "fg": s.fg = b.dataset.v; refresh({ list: true, props: true }); break;
@@ -881,9 +894,6 @@ function onEditorInput(e) {
     if (!v || v < 8) return;
     s[field] = Math.min(v, 280);
     if (s.shape === "circle") s.h = s.w;
-  } else if (field === "font") {
-    s.font = el.value;
-    s.weight = el.value === "Caveat" || el.value === "PT Serif" || el.value === "Comfortaa" ? 700 : 600;
   } else if (field === "fs") {
     s.fs = Math.round(+el.value * 10) / 10;
   } else if (field === "qty") {
@@ -918,7 +928,7 @@ function onEditorChange(e) {
     if (s) e.target.value = qtyOf(s); // вернуть корректное число, если поле оставили пустым
     return;
   }
-    if (e.target.dataset.field === "w" || e.target.dataset.field === "h" || e.target.dataset.field === "font") refresh({ list: true, props: true });
+    if (e.target.dataset.field === "w" || e.target.dataset.field === "h") refresh({ list: true, props: true });
 }
 
 // Выбрать наклейку и открыть окошко редактирования
@@ -946,7 +956,7 @@ function setTotal(list) {
 
 function workCard(w, i) {
   const p = priceOf(w);
-  const first = pack(w.stickers, w.sheet).sheets[0];
+  const first = packWork(w).sheets[0];
   const n = totalQty(w.stickers);
   const sh = SHEETS[w.sheet];
   return `
@@ -1029,7 +1039,7 @@ function viewOrder() {
     const n = totalQty(w.stickers);
     return `<div><dt>${esc(w.name)}<small>${n} шт., ${p.sheets} × ${w.sheet}</small></dt><dd>${money(p.total)}</dd></div>`;
   }).join("");
-  const thumbs = list.flatMap((w) => pack(w.stickers, w.sheet).sheets.map((s) =>
+  const thumbs = list.flatMap((w) => packWork(w).sheets.map((s) =>
     `<figure class="sheet sheet-sm" style="--w:${SHEETS[w.sheet].w};--h:${SHEETS[w.sheet].h}">${sheetSVG(s, w.sheet)}<figcaption>${esc(w.name)}</figcaption></figure>`)).join("");
   app.innerHTML = `${header()}
   <main class="page checkout">
@@ -1117,6 +1127,6 @@ window.addEventListener("hashchange", route);
 route();
 // Перерисовать, когда загрузятся шрифты: от них зависит подбор кегля
 if (document.fonts) {
-  Promise.all(FONTS.flatMap((f) => [document.fonts.load(`400 20px "${f}"`), document.fonts.load(`700 20px "${f}"`)]))
+  Promise.all(FONTS.map((f) => document.fonts.load(`${FONT_INFO[f].weight} 20px "${f}"`)))
     .then(() => route(true));
 }
