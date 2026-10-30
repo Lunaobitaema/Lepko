@@ -14,7 +14,7 @@ let selected = null;
 let editing = true; // открыто ли окно редактирования выбранной наклейки
 
 function normWork(w) {
-  return { ...EMPTY, ...w, id: w.id || uid(), name: w.name || "Работа", stickers: mergeDuplicates(w.stickers || []), touched: !!w.touched };
+  return { ...EMPTY, ...w, material: "standard", id: w.id || uid(), name: w.name || "Работа", stickers: mergeDuplicates(w.stickers || []), touched: !!w.touched };
 }
 function load() {
   let st = null;
@@ -73,7 +73,7 @@ function applyStyle(styleKey) {
 }
 function startFromSolution(cat, sol) {
   addWork({
-    cat: cat.id, sol: sol.id, name: sol.name, style: sol.style, material: sol.material, sheet: sol.sheet,
+    cat: cat.id, sol: sol.id, name: sol.name, style: sol.style, material: "standard", sheet: sol.sheet,
     stickers: mergeDuplicates(sol.stickers).map((s, i) => styled({ ...s, id: uid() }, sol.style, i)),
   });
 }
@@ -208,7 +208,7 @@ function viewHome(query) {
     <section class="section faq" aria-labelledby="f-title">
       <h2 id="f-title" class="section-title">Частые вопросы</h2>
       <details><summary>Сколько наклеек поместится на лист?</summary><p>Зависит от размера. Например, на A6 помещается 8 наклеек 40×22 мм или 12 круглых по 24 мм. Конструктор сразу показывает раскладку и считает листы.</p></details>
-      <details><summary>Наклейки выдержат мытьё?</summary><p>Выберите вариант «Кухня и ванная»: плёнка покрыта ламинатом и не боится воды. Для морозилки и улицы есть свои материалы.</p></details>
+      <details><summary>Наклейки выдержат мытьё?</summary><p>Наклейки печатаются на виниловой плёнке и покрываются ламинатом, поэтому не боятся воды и протирания. Банки и контейнеры с ними можно мыть руками.</p></details>
       <details><summary>Можно заказать совсем немного?</summary><p>Да. Минимальный заказ — один лист A6. Оставшееся место можно заполнить копиями, это бесплатно.</p></details>
       <details><summary>Как оплатить и получить?</summary><p>Картой на сайте или наложенным платежом. Доставка Econt или Speedy до офиса или курьером до двери.</p></details>
     </section>
@@ -254,14 +254,15 @@ function miniSticker(s) {
 }
 
 // ---------- шаги выбора ----------
-const STEP_NAMES = ["Стиль", "Где будет наклейка", "Размер листа", "Свои слова"];
+const STEP_NAMES = ["Стиль", "Размер листа", "Свои слова"];
+const LAST_STEP = STEP_NAMES.length - 1; // последний шаг мастера, дальше конструктор
 
 function stepper(active, base) {
   return `<ol class="stepper" aria-label="Шаги">${STEP_NAMES.map((n, i) => {
     const k = i + 1;
     const state = k < active ? "done" : k === active ? "current" : "";
     const inner = `<span class="st-n">${k}</span><span class="st-t">${n}</span>`;
-    const href = k < active ? (k === 4 ? "#/editor" : `${base}/${k}`) : null;
+    const href = k < active ? (k === STEP_NAMES.length ? "#/editor" : `${base}/${k}`) : null;
     return `<li class="${state}" ${k === active ? 'aria-current="step"' : ""}>${href ? `<a href="${href}">${inner}</a>` : inner}</li>`;
   }).join("")}</ol>`;
 }
@@ -275,7 +276,7 @@ function viewStep(catId, solId, step, query = new URLSearchParams()) {
     if (query.get("new")) { history.replaceState(null, "", location.pathname + location.search + `#/s/${cat.id}/${sol.id}/${step | 0 || 1}`); }
   }
   const base = `#/s/${cat.id}/${sol.id}`;
-  step = Math.min(3, Math.max(1, step | 0));
+  step = Math.min(LAST_STEP, Math.max(1, step | 0));
 
   let title = "", body = "";
   if (step === 1) {
@@ -287,14 +288,6 @@ function viewStep(catId, solId, step, query = new URLSearchParams()) {
         <span class="choice-name">${st.name}</span>
       </button>`;
     }).join("")}</div>`;
-  } else if (step === 2) {
-    title = "Где будут наклейки?";
-    body = `<div class="choices">${Object.entries(MATERIALS).map(([k, m]) => `
-      <button class="choice choice-row ${order.material === k ? "is-on" : ""}" data-act="material" data-v="${k}">
-        <span class="choice-ico">${iconSVG(m.icon, 26)}</span>
-        <span><span class="choice-name">${m.name}</span><span class="choice-text">${m.text}</span></span>
-        <span class="choice-price">${m.extra ? "+" + Math.round(m.extra * 100) + "%" : "базовая цена"}</span>
-      </button>`).join("")}</div>`;
   } else {
     title = "Какой размер листа?";
     body = `<div class="choices choices-sheet">${Object.entries(SHEETS).map(([k, sh]) => {
@@ -325,7 +318,7 @@ function viewStep(catId, solId, step, query = new URLSearchParams()) {
     ${body}
     <div class="wiz-nav">
       <a class="btn btn-ghost" href="${step === 1 ? `#/c/${cat.id}` : `${base}/${step - 1}`}">Назад</a>
-      <a class="btn btn-primary" href="${step === 3 ? "#/editor" : `${base}/${step + 1}`}">${step === 3 ? "Перейти к своим словам" : "Дальше"}</a>
+      <a class="btn btn-primary" href="${step === LAST_STEP ? "#/editor" : `${base}/${step + 1}`}">${step === LAST_STEP ? "Перейти к своим словам" : "Дальше"}</a>
     </div>
   </main>
   ${footer()}`;
@@ -335,10 +328,9 @@ function viewStep(catId, solId, step, query = new URLSearchParams()) {
     if (!b) return;
     const v = b.dataset.v;
     if (b.dataset.act === "style") applyStyle(v);
-    if (b.dataset.act === "material") order.material = v;
     if (b.dataset.act === "sheet") order.sheet = v;
     save();
-    location.hash = step === 3 ? "#/editor" : `${base}/${step + 1}`;
+    location.hash = step === LAST_STEP ? "#/editor" : `${base}/${step + 1}`;
   };
 }
 
@@ -355,7 +347,7 @@ function viewEditor() {
   app.innerHTML = `${header()}
   <main class="page editor">
     <nav class="crumbs" aria-label="Путь">${crumbs}</nav>
-    ${sol ? stepper(4, `#/s/${cat.id}/${sol.id}`) : ""}
+    ${sol ? stepper(STEP_NAMES.length, `#/s/${cat.id}/${sol.id}`) : ""}
     <div class="work-bar">
       <label class="work-name">
         <span class="muted">Работа ${usedWorks().indexOf(order) + 1} из ${usedWorks().length} в наборе</span>
@@ -370,9 +362,6 @@ function viewEditor() {
       <section class="ed-preview" aria-label="Превью листа">
         <div class="ed-sheet-bar">
           <div class="seg" role="group" aria-label="Размер листа">${Object.keys(SHEETS).map((k) => `<button data-sheet="${k}" class="${order.sheet === k ? "is-on" : ""}">${k}</button>`).join("")}</div>
-          <label class="mat-select">Материал
-            <select id="material">${Object.entries(MATERIALS).map(([k, m]) => `<option value="${k}" ${order.material === k ? "selected" : ""}>${m.name}</option>`).join("")}</select>
-          </label>
         </div>
         <div id="sheets" class="sheets"></div>
         <p class="ed-hint">Нажмите на наклейку, чтобы изменить её. Пунктир — линия реза.</p>
@@ -407,6 +396,8 @@ function viewEditor() {
   app.onclick = onEditorClick;
   app.oninput = onEditorInput;
   app.onchange = onEditorChange;
+  app.ontouchstart = onFocusTouchStart;
+  app.ontouchend = onFocusTouchEnd;
 }
 
 function renderSheets() {
@@ -423,24 +414,63 @@ function renderSheets() {
 
 // Закреплённое окошко с редактируемой наклейкой: всегда видно под шапкой,
 // пока прокручиваешь настройки. Отсюда же — масштаб с линейками и закрытие.
+let swipeDir = 0; // направление последнего перелистывания, для анимации
+
 function renderFocus() {
   const box = $("#focus");
   const s = current();
   if (!box || !s) return;
   const pad = 1.2;
   const L = stickerLayout(s);
+  const i = order.stickers.indexOf(s), n = order.stickers.length;
+  const anim = swipeDir > 0 ? " from-right" : swipeDir < 0 ? " from-left" : "";
+  swipeDir = 0;
+  const arrow = (d) => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
   box.innerHTML = `
-    <div class="focus-art">
-      <svg viewBox="${-pad} ${-pad} ${s.w + pad * 2} ${s.h + pad * 2}" style="aspect-ratio:${s.w + pad * 2}/${s.h + pad * 2}" role="img" aria-label="Наклейка «${esc(s.text)}»">${stickerSVG({ ...s, id: "focus" }, 0, 0)}</svg>
+    <div class="focus-stage">
+      ${n > 1 ? `<button class="focus-nav" data-act="prev" aria-label="Предыдущая наклейка">${arrow("M15 5l-7 7 7 7")}</button>` : ""}
+      <div class="focus-art${anim}">
+        <svg viewBox="${-pad} ${-pad} ${s.w + pad * 2} ${s.h + pad * 2}" style="aspect-ratio:${s.w + pad * 2}/${s.h + pad * 2}" role="img" aria-label="Наклейка «${esc(s.text)}»">${stickerSVG({ ...s, id: "focus" }, 0, 0)}</svg>
+      </div>
+      ${n > 1 ? `<button class="focus-nav" data-act="next" aria-label="Следующая наклейка">${arrow("M9 5l7 7-7 7")}</button>` : ""}
     </div>
     <div class="focus-meta">
       <span class="focus-title">${esc(s.text || "Без текста")}</span>
-      <span class="muted">${s.w}×${s.h} мм, ${qtyOf(s)} шт.${L.main ? `, текст ${L.main.toFixed(1).replace(".", ",")} мм` : ""}</span>
+      <span class="muted">${n > 1 ? `${i + 1} из ${n} · ` : ""}${s.w}×${s.h} мм, ${qtyOf(s)} шт.${L.main ? `, текст ${L.main.toFixed(1).replace(".", ",")} мм` : ""}</span>
     </div>
     <div class="focus-actions">
       <button class="vw-btn" data-act="view" title="Натуральная величина с линейками">${iconSVG("ruler", 20)}<span>Масштаб</span></button>
       <button class="vw-btn vw-close" data-act="close-edit" aria-label="Закрыть редактирование" title="Готово, закрыть">${iconSVG("close", 22)}</button>
-    </div>`;
+    </div>
+    ${n > 1 ? `<p class="focus-hint">Листайте влево и вправо, чтобы перейти к другой наклейке</p>` : ""}`;
+}
+
+// Перейти к соседней наклейке (по кругу)
+function stepSticker(delta) {
+  const n = order.stickers.length;
+  if (n < 2) return;
+  const i = order.stickers.findIndex((x) => x.id === selected);
+  selected = order.stickers[(i + delta + n) % n].id;
+  swipeDir = delta;
+  refresh({ list: true, props: true });
+  // в списке прокрутить к выбранной строке, не двигая страницу
+  const row = $(`.s-row[data-id="${selected}"]`), list = $("#list");
+  if (row && list) list.scrollTop = row.offsetTop - list.offsetTop - list.clientHeight / 2 + row.clientHeight / 2;
+}
+
+// Свайп по окошку наклейки
+let touch0 = null;
+function onFocusTouchStart(e) {
+  if (!e.target.closest("#focus") || e.touches.length !== 1) { touch0 = null; return; }
+  touch0 = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+}
+function onFocusTouchEnd(e) {
+  if (!touch0) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touch0.x, dy = t.clientY - touch0.y;
+  const fast = Date.now() - touch0.t < 600;
+  touch0 = null;
+  if (fast && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) stepSticker(dx < 0 ? 1 : -1);
 }
 
 function setTopHeight() {
@@ -570,11 +600,10 @@ function syncFontSlider() {
 
 function renderSummary() {
   const p = priceOf(order);
-  const m = MATERIALS[order.material];
   const n = totalQty(order.stickers);
   const list = usedWorks();
   const all = list.length > 1 ? `<span>Весь набор: ${money(setTotal(list))}, ${list.length} ${plural(list.length, "работа", "работы", "работ")}</span>` : "";
-  $("#summary").innerHTML = `<b>${money(p.total)}</b><span>${p.sheets} ${plural(p.sheets, "лист", "листа", "листов")} ${order.sheet}, ${n} ${plural(n, "наклейка", "наклейки", "наклеек")}, ${m.name.toLowerCase()}</span>${all}`;
+  $("#summary").innerHTML = `<b>${money(p.total)}</b><span>${p.sheets} ${plural(p.sheets, "лист", "листа", "листов")} ${order.sheet}, ${n} ${plural(n, "наклейка", "наклейки", "наклеек")}</span>${all}`;
 }
 
 function refresh({ list = false, props = false } = {}) {
@@ -768,6 +797,8 @@ function onEditorClick(e) {
   switch (b.dataset.act) {
     case "select": startEditing(id); break;
     case "view": openViewer(); break;
+    case "prev": stepSticker(-1); break;
+    case "next": stepSticker(1); break;
     case "close-edit": {
       editing = false;
       refresh({ list: true, props: true });
@@ -887,8 +918,7 @@ function onEditorChange(e) {
     if (s) e.target.value = qtyOf(s); // вернуть корректное число, если поле оставили пустым
     return;
   }
-  if (e.target.id === "material") { order.material = e.target.value; refresh(); }
-  if (e.target.dataset.field === "w" || e.target.dataset.field === "h" || e.target.dataset.field === "font") refresh({ list: true, props: true });
+    if (e.target.dataset.field === "w" || e.target.dataset.field === "h" || e.target.dataset.field === "font") refresh({ list: true, props: true });
 }
 
 // Выбрать наклейку и открыть окошко редактирования
@@ -926,7 +956,7 @@ function workCard(w, i) {
     </a>
     <div class="work-body">
       <h2><span class="work-num">${i + 1}</span>${esc(w.name)}</h2>
-      <p class="muted">${n} ${plural(n, "наклейка", "наклейки", "наклеек")}, ${p.sheets} ${plural(p.sheets, "лист", "листа", "листов")} ${w.sheet}, ${MATERIALS[w.material].name.toLowerCase()}</p>
+      <p class="muted">${n} ${plural(n, "наклейка", "наклейки", "наклеек")}, ${p.sheets} ${plural(p.sheets, "лист", "листа", "листов")} ${w.sheet}</p>
       <p class="work-price">${money(p.total)}</p>
       <div class="work-btns">
         <a class="btn btn-primary btn-sm" href="#/w/${w.id}">Изменить</a>
@@ -997,7 +1027,7 @@ function viewOrder() {
   const rows = list.map((w) => {
     const p = priceOf(w);
     const n = totalQty(w.stickers);
-    return `<div><dt>${esc(w.name)}<small>${n} шт., ${p.sheets} × ${w.sheet}, ${MATERIALS[w.material].name.toLowerCase()}</small></dt><dd>${money(p.total)}</dd></div>`;
+    return `<div><dt>${esc(w.name)}<small>${n} шт., ${p.sheets} × ${w.sheet}</small></dt><dd>${money(p.total)}</dd></div>`;
   }).join("");
   const thumbs = list.flatMap((w) => pack(w.stickers, w.sheet).sheets.map((s) =>
     `<figure class="sheet sheet-sm" style="--w:${SHEETS[w.sheet].w};--h:${SHEETS[w.sheet].h}">${sheetSVG(s, w.sheet)}<figcaption>${esc(w.name)}</figcaption></figure>`)).join("");
@@ -1061,7 +1091,7 @@ function route(keepScroll = false) {
   const [path, qs] = raw.split("?");
   const query = new URLSearchParams(qs || "");
   const parts = path.split("/").filter(Boolean);
-  app.onclick = null; app.oninput = null; app.onchange = null;
+  app.onclick = null; app.oninput = null; app.onchange = null; app.ontouchstart = null; app.ontouchend = null;
   if (viewerOpen()) $("#viewer").close();
   document.body.classList.toggle("has-paybar", parts[0] === "editor" || parts[0] === "custom" || parts[0] === "set");
 

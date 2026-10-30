@@ -263,7 +263,7 @@ p { margin: 0; }
 .qty-in::-webkit-outer-spin-button, .qty-in::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .qty-lg .qty-btn { width: 48px; height: 46px; }
 .qty-lg .qty-in { width: 64px; height: 46px; font-size: 18px; }
-.qty-field { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.qty-field { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; text-align: left; gap: 10px 14px; }
 .qty-field > span { flex-basis: 100%; }
 .qty-field .link-btn { margin-left: 0; }
 .s-row.is-on { border-color: var(--cobalt); background: #F1F4FD; }
@@ -308,13 +308,22 @@ p { margin: 0; }
 /* ---------- закреплённое окошко редактируемой наклейки ---------- */
 .focus {
   position: sticky; top: calc(var(--top-h, 64px) + 8px); z-index: 12;
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "art actions" "meta meta";
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "art actions" "meta meta" "hint hint";
   gap: 8px 12px; align-items: center;
   margin: -6px -6px 18px; padding: 12px;
   background: #E4E8EF; border-radius: 14px;
   box-shadow: 0 0 0 6px var(--paper), 0 10px 18px -8px rgba(28, 35, 64, 0.35);
 }
-.focus-art { grid-area: art; display: flex; align-items: center; min-height: 64px; }
+.focus-stage { grid-area: art; display: flex; align-items: center; gap: 6px; min-width: 0; touch-action: pan-y; }
+.focus-art { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 64px; min-width: 0; }
+.focus-art.from-right { animation: slideFromRight 0.22s ease-out; }
+.focus-art.from-left { animation: slideFromLeft 0.22s ease-out; }
+@keyframes slideFromRight { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes slideFromLeft { from { transform: translateX(-40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.focus-nav { flex: none; width: 36px; height: 56px; display: grid; place-items: center; border: 0; border-radius: 10px; background: rgba(255, 255, 255, 0.7); color: var(--ink); cursor: pointer; }
+.focus-nav:hover { background: var(--paper); }
+.focus-hint { grid-column: 1 / -1; font-size: 12px; color: var(--ink-2); margin-top: -2px; }
+@media (hover: hover) and (pointer: fine) { .focus-hint { display: none; } }
 .focus-art svg { display: block; height: auto; max-height: 96px; max-width: 100%; width: auto; overflow: visible; }
 .focus-art .stk { cursor: default; }
 .focus-art .stk-cut { stroke-width: 0.25; }
