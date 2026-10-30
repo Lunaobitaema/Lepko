@@ -14,7 +14,7 @@ let selected = null;
 let editing = true; // открыто ли окно редактирования выбранной наклейки
 
 function normWork(w) {
-  return { ...EMPTY, opt: 50, ...w, material: "standard", id: w.id || uid(), name: w.name || "Работа", stickers: mergeDuplicates(w.stickers || []), touched: !!w.touched };
+  return { ...EMPTY, opt: 50, ...w, material: "standard", id: w.id || uid(), name: w.name || tr("Работа"), stickers: mergeDuplicates(w.stickers || []), touched: !!w.touched };
 }
 function load() {
   let st = null;
@@ -73,12 +73,12 @@ function applyStyle(styleKey) {
 }
 function startFromSolution(cat, sol) {
   addWork({
-    cat: cat.id, sol: sol.id, name: sol.name, style: sol.style, material: "standard", sheet: sol.sheet,
-    stickers: mergeDuplicates(sol.stickers).map((s, i) => styled({ ...s, id: uid() }, sol.style, i)),
+    cat: cat.id, sol: sol.id, name: tr(sol.name), style: sol.style, material: "standard", sheet: sol.sheet,
+    stickers: mergeDuplicates(sol.stickers.map(locSticker)).map((s, i) => styled({ ...s, id: uid() }, sol.style, i)),
   });
 }
 function startCustom() {
-  addWork({ ...EMPTY, name: "Своя наклейка", stickers: [styled({ id: uid(), shape: "round", w: 50, h: 24, text: "Моя наклейка", sub: "", icon: "star" }, "minimal")] });
+  addWork({ ...EMPTY, name: tr("Своя наклейка"), stickers: [styled({ id: uid(), shape: "round", w: 50, h: 24, text: tr("Моя наклейка"), sub: "", icon: "star" }, "minimal")] });
 }
 
 const findCat = (id) => CATEGORIES.find((c) => c.id === id);
@@ -88,6 +88,7 @@ const findSol = (cat, id) => cat?.solutions.find((s) => s.id === id);
 function header() {
   return `<header class="top">
     <a href="#/" class="logo" aria-label="Лепко, на главную"><span>лепко</span></a>
+    <div class="lang" role="group" aria-label="Язык">${LANGS.map(([c, l, name]) => `<button data-lang="${c}" class="${LANG === c ? "is-on" : ""}" title="${name}" lang="${c}" translate="no">${l}</button>`).join("")}</div>
     <nav class="top-nav" aria-label="Основное меню">
       <a href="#/?to=catalog">Каталог</a>
       <a href="#/?to=how">Как это работает</a>
@@ -130,7 +131,7 @@ function label(text, extra = "") {
 // ---------- главная ----------
 function viewHome(query) {
   const demoSol = CATEGORIES[0].solutions[0];
-  const demo = demoSol.stickers.map((s, i) => styled({ ...s, id: "d" + i }, "minimal", i));
+  const demo = demoSol.stickers.map(locSticker).map((s, i) => styled({ ...s, id: "d" + i }, "minimal", i));
   const demoSheet = pack(demo, "A6").sheets[0];
 
   const gallery = GALLERY.map(([id, cat, name], i) => `
@@ -235,7 +236,7 @@ function viewCategory(catId) {
   const cat = findCat(catId);
   if (!cat) return notFound();
   const cards = cat.solutions.map((s) => {
-    const prev = s.stickers.slice(0, 4).map((x, i) => styled({ ...x, id: "p" + i }, s.style, i));
+    const prev = s.stickers.slice(0, 4).map(locSticker).map((x, i) => styled({ ...x, id: "p" + i }, s.style, i));
     return `
     <article class="sol">
       <div class="sol-photo">${photoImg(s.photo, s.name, 800)}${label(s.name, "label-tilt-l")}</div>
@@ -243,7 +244,7 @@ function viewCategory(catId) {
         <p>${esc(s.text)}</p>
         <div class="sol-mini">${prev.map((x) => miniSticker(x)).join("")}</div>
         <div class="sol-foot">
-          <span class="muted">${s.stickers.length} ${plural(s.stickers.length, "наклейка", "наклейки", "наклеек")} в наборе</span>
+          <span class="muted">${t("{n} в наборе", { n: `${s.stickers.length} ${plural(s.stickers.length, "наклейка", "наклейки", "наклеек")}` })}</span>
           <a class="btn btn-primary" href="#/s/${cat.id}/${s.id}/1?new=1">Выбрать</a>
         </div>
       </div>
@@ -294,7 +295,7 @@ function viewStep(catId, solId, step, query = new URLSearchParams()) {
   if (step === 1) {
     title = "Какой стиль вам нравится?";
     body = `<div class="choices choices-style">${Object.entries(STYLES).map(([k, st]) => {
-      const sample = sol.stickers.slice(0, 2).map((x, i) => styled({ ...x, id: k + i }, k, i));
+      const sample = sol.stickers.slice(0, 2).map(locSticker).map((x, i) => styled({ ...x, id: k + i }, k, i));
       return `<button class="choice ${order.style === k ? "is-on" : ""}" data-act="style" data-v="${k}">
         <span class="choice-art">${sample.map(miniSticker).join("")}</span>
         <span class="choice-name">${st.name}</span>
@@ -310,7 +311,7 @@ function viewStep(catId, solId, step, query = new URLSearchParams()) {
       <div class="wiz-photo">${photoImg(sol.photo, sol.name, 500)}</div>
       <div>
         <h1 class="page-title">${title}</h1>
-        <p class="page-lead">Набор «${esc(sol.name)}». Всё можно поменять позже в конструкторе.</p>
+        <p class="page-lead">${t("Набор «{name}». Всё можно поменять позже в конструкторе.", { name: esc(tr(sol.name)) })}</p>
       </div>
     </div>
     ${body}
@@ -347,7 +348,7 @@ function viewEditor() {
     ${sol ? stepper(STEP_NAMES.length, `#/s/${cat.id}/${sol.id}`) : ""}
     <div class="work-bar">
       <label class="work-name">
-        <span class="muted">Работа ${usedWorks().indexOf(order) + 1} из ${usedWorks().length} в наборе</span>
+        <span class="muted">${t("Работа {i} из {n} в наборе", { i: usedWorks().indexOf(order) + 1, n: usedWorks().length })}</span>
         <input id="workName" value="${esc(order.name)}" aria-label="Название работы" maxlength="60">
       </label>
       <div class="work-actions">
@@ -415,14 +416,14 @@ function renderSheets() {
     const opt = workOpt(order);
     const best = opt < 100 ? pack(order.stickers, order.sheet, 100).sheets.length : p.sheets.length;
     const save = p.sheets.length - best;
-    hint.innerHTML = `${OPT_HINT[opt]}.` + (save > 0 ? ` <button class="link-btn" data-opt="100">При 100% — ${best} ${plural(best, "лист", "листа", "листов")} вместо ${p.sheets.length}</button>` : "");
+    hint.innerHTML = `${tr(OPT_HINT[opt])}.` + (save > 0 ? ` <button class="link-btn" data-opt="100">${t("При 100% — {a} вместо {b}", { a: `${best} ${plural(best, "лист", "листа", "листов")}`, b: p.sheets.length })}</button>` : "");
   }
   const sh = SHEETS[order.sheet];
-  const warn = p.tooBig.length ? `<p class="warn">${p.tooBig.length} ${plural(p.tooBig.length, "наклейка больше", "наклейки больше", "наклеек больше")} листа ${sh.label}. Уменьшите размер или выберите лист побольше.</p>` : "";
+  const warn = p.tooBig.length ? `<p class="warn">${t("{n} больше листа {sheet}. Уменьшите размер или выберите лист побольше.", { n: `${p.tooBig.length} ${plural(p.tooBig.length, "наклейка", "наклейки", "наклеек")}`, sheet: sh.label })}</p>` : "";
   $("#sheets").innerHTML = warn + p.sheets.map((s, i) => `
     <figure class="sheet" style="--w:${sh.w};--h:${sh.h}">
       ${sheetSVG(s, order.sheet, { selected: editing ? selected : null })}
-      <figcaption>Лист ${i + 1} из ${p.sheets.length}, ${sh.label}</figcaption>
+      <figcaption>${t("Лист {i} из {n}, {sheet}", { i: i + 1, n: p.sheets.length, sheet: sh.label })}</figcaption>
     </figure>`).join("");
   renderFocus();
 }
@@ -445,13 +446,13 @@ function renderFocus() {
     <div class="focus-stage">
       ${n > 1 ? `<button class="focus-nav" data-act="prev" aria-label="Предыдущая наклейка">${arrow("M15 5l-7 7 7 7")}</button>` : ""}
       <div class="focus-art${anim}">
-        <svg viewBox="${-pad} ${-pad} ${s.w + pad * 2} ${s.h + pad * 2}" style="aspect-ratio:${s.w + pad * 2}/${s.h + pad * 2}" role="img" aria-label="Наклейка «${esc(s.text)}»">${stickerSVG({ ...s, id: "focus" }, 0, 0)}</svg>
+        <svg viewBox="${-pad} ${-pad} ${s.w + pad * 2} ${s.h + pad * 2}" style="aspect-ratio:${s.w + pad * 2}/${s.h + pad * 2}" role="img" aria-label="${t("Наклейка «{t}»", { t: esc(s.text) })}">${stickerSVG({ ...s, id: "focus" }, 0, 0)}</svg>
       </div>
       ${n > 1 ? `<button class="focus-nav" data-act="next" aria-label="Следующая наклейка">${arrow("M9 5l7 7-7 7")}</button>` : ""}
     </div>
     <div class="focus-meta">
       <span class="focus-title">${esc(s.text || "Без текста")}</span>
-      <span class="muted">${n > 1 ? `${i + 1} из ${n} · ` : ""}${s.w}×${s.h} мм, ${qtyOf(s)} шт.${L.main ? `, текст ${L.main.toFixed(1).replace(".", ",")} мм` : ""}</span>
+      <span class="muted">${n > 1 ? `${t("{i} из {n}", { i: i + 1, n })} · ` : ""}${s.w}×${s.h} ${tr("мм")}, ${t("{n} шт.", { n: qtyOf(s) })}${L.main ? `, ${t("текст {v} мм", { v: num1(L.main) })}` : ""}</span>
     </div>
     <div class="focus-actions">
       <button class="vw-btn" data-act="view" title="Натуральная величина с линейками">${iconSVG("ruler", 20)}<span>Масштаб</span></button>
@@ -500,7 +501,7 @@ const svgPlus = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" str
 
 function renderCount() {
   const n = totalQty(order.stickers), kinds = order.stickers.length;
-  $("#count").textContent = `${n} шт.${kinds > 1 ? `, ${kinds} ${plural(kinds, "вид", "вида", "видов")}` : ""}`;
+  $("#count").textContent = `${t("{n} шт.", { n })}${kinds > 1 ? `, ${kinds} ${plural(kinds, "вид", "вида", "видов")}` : ""}`;
 }
 
 function renderList() {
@@ -586,13 +587,13 @@ function renderProps() {
       </div>
     </fieldset>
 
-    <fieldset class="field"><legend>Фон</legend><div class="swatches">${SWATCHES.map((c) => `<button class="sw ${s.bg === c ? "is-on" : ""}" style="--c:${c}" data-act="bg" data-v="${c}" aria-label="Фон ${c}"></button>`).join("")}</div></fieldset>
-    <fieldset class="field"><legend>Цвет текста</legend><div class="swatches">${["#1C2340", "#FFFFFF", "#F3F1E8", "#3B2A17", "#2F5BD3", "#C8433A"].map((c) => `<button class="sw ${s.fg === c ? "is-on" : ""}" style="--c:${c}" data-act="fg" data-v="${c}" aria-label="Текст ${c}"></button>`).join("")}</div></fieldset>
+    <fieldset class="field"><legend>Фон</legend><div class="swatches">${SWATCHES.map((c) => `<button class="sw ${s.bg === c ? "is-on" : ""}" style="--c:${c}" data-act="bg" data-v="${c}" aria-label="${tr("Фон")} ${c}"></button>`).join("")}</div></fieldset>
+    <fieldset class="field"><legend>Цвет текста</legend><div class="swatches">${["#1C2340", "#FFFFFF", "#F3F1E8", "#3B2A17", "#2F5BD3", "#C8433A"].map((c) => `<button class="sw ${s.fg === c ? "is-on" : ""}" style="--c:${c}" data-act="fg" data-v="${c}" aria-label="${tr("Цвет текста")} ${c}"></button>`).join("")}</div></fieldset>
 
     <fieldset class="field"><legend>Шрифт</legend>
-      <div class="fonts">${FONTS.map((f) => `<button class="font-pick ${s.font === f ? "is-on" : ""}" data-act="font" data-v="${esc(f)}" style="font-family:${esc(fontStack(f))};font-weight:${FONT_INFO[f].weight}" aria-label="Шрифт ${esc(f)}, ${FONT_INFO[f].label.toLowerCase()}">
+      <div class="fonts">${FONTS.map((f) => `<button class="font-pick ${s.font === f ? "is-on" : ""}" data-act="font" data-v="${esc(f)}" style="font-family:${esc(fontStack(f))};font-weight:${FONT_INFO[f].weight}" aria-label="${tr("Шрифт")} ${esc(f)}, ${tr(FONT_INFO[f].label).toLowerCase()}">
         <span class="font-sample">${esc((s.text || "Наклейка").slice(0, 14))}</span>
-        <span class="font-name">${esc(f)} · ${FONT_INFO[f].label}</span>
+        <span class="font-name">${esc(f)} · ${tr(FONT_INFO[f].label)}</span>
       </button>`).join("")}</div>
     </fieldset>
     <button class="btn btn-ghost btn-sm" data-act="apply-all">Применить форму, размер и цвета ко всем</button>`;
@@ -612,7 +613,7 @@ function syncFontSlider() {
   r.max = Math.max(FONT_MIN + 0.1, L.max).toFixed(1);
   r.value = (has ? L.main : FONT_MIN).toFixed(1);
   const pt = L.main / 0.3528;
-  $("#fsVal").textContent = has ? `${L.main.toFixed(1).replace(".", ",")} мм · ${Math.round(pt)} pt` : "нет текста";
+  $("#fsVal").textContent = has ? t("{v} мм · {pt} pt", { v: num1(L.main), pt: Math.round(pt) }) : tr("нет текста");
   $("#fsAuto").hidden = !s.fs;
 }
 
@@ -620,7 +621,7 @@ function renderSummary() {
   const p = priceOf(order);
   const n = totalQty(order.stickers);
   const list = usedWorks();
-  const all = list.length > 1 ? `<span>Весь набор: ${money(setTotal(list))}, ${list.length} ${plural(list.length, "работа", "работы", "работ")}</span>` : "";
+  const all = list.length > 1 ? `<span>${t("Весь набор: {sum}, {n}", { sum: money(setTotal(list)), n: `${list.length} ${plural(list.length, "работа", "работы", "работ")}` })}</span>` : "";
   $("#summary").innerHTML = `<b>${money(p.total)}</b><span>${p.sheets} ${plural(p.sheets, "лист", "листа", "листов")} ${order.sheet}, ${n} ${plural(n, "наклейка", "наклейки", "наклеек")}</span>${all}`;
 }
 
@@ -714,7 +715,7 @@ function renderViewer() {
   const lenX = Math.max(s.w + P * 2, availW / k);
   const lenY = Math.max(s.h + P * 2, availH / k);
 
-  $("#vwSize").textContent = `${s.w} × ${s.h} мм${z === 2 ? ", увеличено в 2 раза" : ""}`;
+  $("#vwSize").textContent = t("{w} × {h} мм", { w: s.w, h: s.h }) + (z === 2 ? tr(", увеличено в 2 раза") : "");
   const zb = $("#vwZoom");
   zb.innerHTML = `${iconSVG(z === 2 ? "zoomOut" : "zoomIn", 20)}<span>${z === 2 ? "1:1" : "×2"}</span>`;
   zb.setAttribute("aria-pressed", String(z === 2));
@@ -729,14 +730,14 @@ function renderViewer() {
     <div class="vw-ruler vw-ruler-x">${rulerSVG(lenX, k, R, P, "x")}</div>
     <div class="vw-ruler vw-ruler-y">${rulerSVG(lenY, k, R, P, "y")}</div>
     <div class="vw-stage" style="width:${lenX * k}px;height:${lenY * k}px">
-      <svg class="vw-sticker" style="left:${P * k}px;top:${P * k}px;width:${s.w * k}px;height:${s.h * k}px" viewBox="-0.5 -0.5 ${s.w + 1} ${s.h + 1}" aria-label="Наклейка ${esc(s.text)}">
+      <svg class="vw-sticker" style="left:${P * k}px;top:${P * k}px;width:${s.w * k}px;height:${s.h * k}px" viewBox="-0.5 -0.5 ${s.w + 1} ${s.h + 1}" aria-label="${t("Наклейка «{t}»", { t: esc(s.text) })}">
         ${stickerSVG({ ...s, id: "vw" }, 0, 0)}
       </svg>
     </div>`;
 
   $("#vwCalSum").innerHTML = calibrated
-    ? `${iconSVG("ruler", 18)} Масштаб настроен под ваш экран`
-    : `${iconSVG("ruler", 18)} Масштаб примерный. Настроить точно`;
+    ? `${iconSVG("ruler", 18)} ${tr("Масштаб настроен под ваш экран")}`
+    : `${iconSVG("ruler", 18)} ${tr("Масштаб примерный. Настроить точно")}`;
   const card = $("#vwCard");
   // на узком экране карта не влезает горизонтально — показываем её вертикально
   const portrait = CARD_W * ppm > $("#vwCal").clientWidth - 40;
@@ -848,7 +849,7 @@ function onEditorClick(e) {
     }
     case "add": {
       const base = s || order.stickers[order.stickers.length - 1];
-      const n = { ...base, id: uid(), text: "Новая", sub: "", qty: 1 };
+      const n = { ...base, id: uid(), text: tr("Новая"), sub: "", qty: 1 };
       order.stickers.push(n); selected = n.id; editing = true;
       refresh({ list: true, props: true });
       requestAnimationFrame(() => $(`#list [data-id="${n.id}"].s-text`)?.select());
@@ -858,7 +859,7 @@ function onEditorClick(e) {
       const base = s || order.stickers[0];
       const k = spaceLeftFor(base, order.stickers, order.sheet, workOpt(order));
       base.qty = qtyOf(base) + k;
-      toast(k ? `«${base.text}»: +${k} шт., теперь ${base.qty}` : "На последнем листе нет места для этой наклейки");
+      toast(k ? t("«{t}»: +{k} шт., теперь {q}", { t: base.text, k, q: base.qty }) : tr("На последнем листе нет места для этой наклейки"));
       refresh({ list: true, props: true }); break;
     }
     case "bulk": {
@@ -871,7 +872,7 @@ function onEditorClick(e) {
       });
       order.stickers = mergeDuplicates(order.stickers);
       $("#bulk").value = "";
-      toast(`Добавлено: ${lines.length}`);
+      toast(t("Добавлено: {n}", { n: lines.length }));
       refresh({ list: true }); break;
     }
     case "shape":
@@ -896,7 +897,7 @@ function onEditorClick(e) {
 
 function onEditorInput(e) {
   const el = e.target;
-  if (el.id === "workName") { order.name = el.value.trim() || "Работа"; save(); return; }
+  if (el.id === "workName") { order.name = el.value.trim() || tr("Работа"); save(); return; }
   const field = el.dataset.field;
   if (!field) return;
   const s = el.dataset.id ? order.stickers.find((x) => x.id === el.dataset.id) : current();
@@ -973,7 +974,7 @@ function workCard(w, i) {
   const sh = SHEETS[w.sheet];
   return `
   <article class="work ${w === order ? "is-active" : ""}">
-    <a class="work-thumb" href="#/w/${w.id}" aria-label="Открыть «${esc(w.name)}»">
+    <a class="work-thumb" href="#/w/${w.id}" aria-label="${t("Открыть «{name}»", { name: esc(w.name) })}">
       <span class="sheet-thumb" style="--w:${sh.w};--h:${sh.h}">${sheetSVG(first, w.sheet)}</span>
     </a>
     <div class="work-body">
@@ -1023,7 +1024,7 @@ function viewSet() {
     const w = works.find((x) => x.id === b.dataset.id);
     if (!w) return;
     if (b.dataset.set === "copy") {
-      const c = normWork({ ...JSON.parse(JSON.stringify(w)), id: uid(), name: w.name + " (копия)", touched: true });
+      const c = normWork({ ...JSON.parse(JSON.stringify(w)), id: uid(), name: w.name + " " + tr("(копия)"), touched: true });
       c.stickers = c.stickers.map((s) => ({ ...s, id: uid() }));
       works.splice(works.indexOf(w) + 1, 0, c);
       save(); toast("Копия добавлена"); viewSet();
@@ -1036,7 +1037,7 @@ function viewSet() {
       }
       works = works.filter((x) => x !== w);
       if (order === w) order = usedWorks()[usedWorks().length - 1] || null;
-      save(); toast(`«${w.name}» удалена`); viewSet();
+      save(); toast(t("«{name}» удалена", { name: w.name })); viewSet();
     }
   };
 }
@@ -1049,7 +1050,7 @@ function viewOrder() {
   const rows = list.map((w) => {
     const p = priceOf(w);
     const n = totalQty(w.stickers);
-    return `<div><dt>${esc(w.name)}<small>${n} шт., ${p.sheets} × ${w.sheet}</small></dt><dd>${money(p.total)}</dd></div>`;
+    return `<div><dt>${esc(w.name)}<small>${t("{n} шт.", { n })}, ${p.sheets} × ${w.sheet}</small></dt><dd>${money(p.total)}</dd></div>`;
   }).join("");
   const thumbs = list.flatMap((w) => packWork(w).sheets.map((s) =>
     `<figure class="sheet sheet-sm" style="--w:${SHEETS[w.sheet].w};--h:${SHEETS[w.sheet].h}">${sheetSVG(s, w.sheet)}<figcaption>${esc(w.name)}</figcaption></figure>`)).join("");
@@ -1079,7 +1080,7 @@ function viewOrder() {
           <label class="radio"><input type="radio" name="pay" value="cod" checked> Наложенным платежом при получении</label>
           <label class="radio"><input type="radio" name="pay" value="card"> Картой на сайте</label>
         </fieldset>
-        <button class="btn btn-primary btn-wide" type="submit">Отправить заказ на ${money(total)}</button>
+        <button class="btn btn-primary btn-wide" type="submit">${t("Отправить заказ на {sum}", { sum: money(total) })}</button>
         <p class="muted" id="coMsg" role="status"></p>
       </form>
     </div>

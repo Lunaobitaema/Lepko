@@ -299,7 +299,7 @@ function sheetSVG(sheet, sheetKey, opts = {}) {
     // повёрнутая наклейка: рисуем в своих координатах и поворачиваем на 90° по часовой
     return `<g transform="translate(${SHEET_MARGIN + x + s.h} ${SHEET_MARGIN + y}) rotate(90)">${stickerSVG(s, 0, 0, o)}</g>`;
   }).join("");
-  return `<svg class="sheet-svg" viewBox="0 0 ${sh.w} ${sh.h}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Лист ${sh.label} с наклейками">
+  return `<svg class="sheet-svg" viewBox="0 0 ${sh.w} ${sh.h}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${sh.label}">
     <rect width="${sh.w}" height="${sh.h}" fill="${liner}"/>
     ${items}
   </svg>`;
@@ -312,11 +312,8 @@ function priceOf(order) {
   return { sheets: n, each, total: Math.round(n * each * 100) / 100 };
 }
 
-const money = (v) => new Intl.NumberFormat("ru-RU", { style: "currency", currency: "EUR", minimumFractionDigits: v % 1 ? 2 : 0 }).format(v);
+const money = (v) => new Intl.NumberFormat(LOCALES[LANG] || "ru-RU", { style: "currency", currency: "EUR", minimumFractionDigits: v % 1 ? 2 : 0 }).format(v);
 
 function plural(n, one, few, many) {
-  const a = n % 10, b = n % 100;
-  if (a === 1 && b !== 11) return one;
-  if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return few;
-  return many;
+  return pluralWord(n, one, few, many);
 }

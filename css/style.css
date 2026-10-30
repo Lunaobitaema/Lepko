@@ -59,7 +59,11 @@ p { margin: 0; }
   border-bottom-right-radius: 10px;
 }
 .logo-sm { font-size: 16px; padding: 7px 11px 8px; }
-.top-nav { display: flex; gap: 6px 20px; flex-wrap: wrap; justify-content: flex-end; }
+.lang { display: flex; flex-shrink: 0; gap: 2px; padding: 3px; background: #fff; border: 1px solid var(--line); border-radius: 999px; }
+.lang button { font-family: inherit; font-weight: 600; font-size: 12px; line-height: 1; letter-spacing: .02em; color: var(--muted, #667); background: none; border: 0; border-radius: 999px; padding: 6px 7px; cursor: pointer; }
+.lang button:hover { color: var(--ink); }
+.lang button.is-on { background: var(--ink); color: #fff; }
+.top-nav { margin-left: auto; display: flex; gap: 6px 20px; flex-wrap: wrap; justify-content: flex-end; }
 .top-nav a { color: var(--ink); text-decoration: none; font-weight: 500; font-size: 15px; white-space: nowrap; }
 .top-nav a:hover { color: var(--cobalt); }
 .cart-link b { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; margin-left: 4px; border-radius: 11px; background: var(--cobalt); color: #fff; font-size: 12px; }
@@ -473,6 +477,8 @@ body.no-scroll { overflow: hidden; }
   .top { padding: 10px 16px; }
   .top-nav { gap: 4px 14px; }
   .top-nav a { font-size: 14px; }
+  .top { gap: 10px; }
+  .lang button { padding: 6px 5px; font-size: 11px; }
   .top-nav a[href="#/?to=how"] { display: none; }
   .logo { font-size: 17px; padding: 8px 11px 9px; }
   .hero-sub { font-size: 17px; }
