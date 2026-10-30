@@ -189,7 +189,7 @@ function shelfPack(copies, W, H) {
 }
 
 // Свободные прямоугольники (MaxRects). Зазор учитываем, увеличивая каждую наклейку и лист на GAP.
-function maxRectsPack(copies, W, H, rule) {
+function maxRectsPack(copies, W, H, rule, allowRotate = false) {
   const BW = W + GAP, BH = H + GAP;
   const sheets = [];
   let left = copies.slice();
@@ -197,18 +197,20 @@ function maxRectsPack(copies, W, H, rule) {
     let free = [{ x: 0, y: 0, w: BW, h: BH }];
     const items = [], rest = [];
     for (const s of left) {
-      const w = s.w + GAP, h = s.h + GAP;
+      // варианты ориентации: как есть и, если разрешено, повёрнутая на 90°
+      const orients = [[s.w + GAP, s.h + GAP, false]];
+      if (allowRotate && s.w !== s.h) orients.push([s.h + GAP, s.w + GAP, true]);
       let best = null, bs1 = Infinity, bs2 = Infinity;
-      for (const f of free) {
+      for (const f of free) for (const [w, h, rot] of orients) {
         if (w > f.w + 1e-6 || h > f.h + 1e-6) continue;
         let a, b;
         if (rule === "bl") { a = f.y + h; b = f.x; }                              // снизу-слева: плотнее к верху листа
         else { const dw = f.w - w, dh = f.h - h; a = Math.min(dw, dh); b = Math.max(dw, dh); } // лучшая короткая сторона
-        if (a < bs1 - 1e-6 || (Math.abs(a - bs1) < 1e-6 && b < bs2)) { bs1 = a; bs2 = b; best = { x: f.x, y: f.y }; }
+        if (a < bs1 - 1e-6 || (Math.abs(a - bs1) < 1e-6 && b < bs2)) { bs1 = a; bs2 = b; best = { x: f.x, y: f.y, w, h, rot }; }
       }
       if (!best) { rest.push(s); continue; }
-      const r = { x: best.x, y: best.y, w, h };
-      items.push({ s, x: r.x, y: r.y });
+      const r = { x: best.x, y: best.y, w: best.w, h: best.h };
+      items.push({ s, x: r.x, y: r.y, rot: best.rot, ph: best.h - GAP });
       // разрезать все свободные области, которые пересекает новая наклейка
       const next = [];
       for (const f of free) {
@@ -229,7 +231,7 @@ function maxRectsPack(copies, W, H, rule) {
   return sheets;
 }
 
-const usedHeight = (sheet) => sheet.items.reduce((m, it) => Math.max(m, it.y + it.s.h), 0);
+const usedHeight = (sheet) => sheet.items.reduce((m, it) => Math.max(m, it.y + (it.ph ?? it.s.h)), 0);
 
 function pack(stickers, sheetKey, opt = 0) {
   const { W, H } = packArea(sheetKey);
@@ -246,8 +248,9 @@ function pack(stickers, sheetKey, opt = 0) {
     const by = (f) => copies.slice().sort((a, b) => f(b) - f(a) || order.get(a.id) - order.get(b.id));
     const orders = [by((s) => s.w * s.h), by((s) => s.h * 1000 + s.w), by((s) => s.w * 1000 + s.h), by((s) => Math.max(s.w, s.h))];
     let best = null, bestKey = null;
-    for (const o of orders) for (const rule of ["bssf", "bl"]) {
-      const r = maxRectsPack(o, W, H, rule);
+    // на 100% разрешаем поворот на 90°: пробуем и с поворотом, и без
+    for (const o of orders) for (const rule of ["bssf", "bl"]) for (const rot of [false, true]) {
+      const r = maxRectsPack(o, W, H, rule, rot);
       const key = [r.length, usedHeight(r[r.length - 1] || { items: [] })];
       if (!best || key[0] < bestKey[0] || (key[0] === bestKey[0] && key[1] < bestKey[1])) { best = r; bestKey = key; }
     }
@@ -291,7 +294,12 @@ function sheetSVG(sheet, sheetKey, opts = {}) {
   const liner = "#EEF1F4";
   const m = 3.5, q = 4.5; // метки плоттера
   const marks = `<g fill="#1C2340"><rect x="${m}" y="${m}" width="${q}" height="${q}"/><rect x="${sh.w - m - q}" y="${m}" width="${q}" height="${q}"/><rect x="${m}" y="${sh.h - m - q}" width="${q}" height="${q}"/></g>`;
-  const items = sheet.items.map(({ s, x, y }) => stickerSVG(s, SHEET_MARGIN + x, SHEET_MARGIN + y, { selected: opts.selected === s.id, liner })).join("");
+  const items = sheet.items.map(({ s, x, y, rot }) => {
+    const o = { selected: opts.selected === s.id, liner };
+    if (!rot) return stickerSVG(s, SHEET_MARGIN + x, SHEET_MARGIN + y, o);
+    // повёрнутая наклейка: рисуем в своих координатах и поворачиваем на 90° по часовой
+    return `<g transform="translate(${SHEET_MARGIN + x + s.h} ${SHEET_MARGIN + y}) rotate(90)">${stickerSVG(s, 0, 0, o)}</g>`;
+  }).join("");
   return `<svg class="sheet-svg" viewBox="0 0 ${sh.w} ${sh.h}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Лист ${sh.label} с наклейками">
     <rect width="${sh.w}" height="${sh.h}" fill="${liner}"/>
     ${marks}${items}
