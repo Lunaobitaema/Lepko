@@ -113,6 +113,7 @@ function footer() {
     <div class="foot-row">
       <span class="logo logo-sm"><span>лепко</span></span>
       <p>Наклейки для порядка дома. Варна, доставка по всей Болгарии.</p>
+      <a class="foot-lab" href="#/lab">Лаборатория</a>
     </div>
     <p class="foot-note">Прототип. Фото временные, с <a href="https://unsplash.com/?utm_source=lepko&utm_medium=referral" target="_blank" rel="noopener">Unsplash</a>: ${credits}.</p>
   </footer>`;
@@ -1069,6 +1070,7 @@ function route(keepScroll = false) {
   else if (parts[0] === "c") viewCategory(parts[1]);
   else if (parts[0] === "s") viewStep(parts[1], parts[2], +parts[3] || 1, query);
   else if (parts[0] === "set") viewSet();
+  else if (parts[0] === "lab") viewLab();
   else if (parts[0] === "w") { if (openWork(parts[1])) location.replace("#/editor"); else location.replace("#/set"); return; }
   else if (parts[0] === "editor") viewEditor();
   else if (parts[0] === "custom") { startCustom(); location.replace("#/editor"); return; }
